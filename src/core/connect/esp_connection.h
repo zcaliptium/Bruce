@@ -5,13 +5,16 @@
 #include <globals.h>
 #include <vector>
 
+#define ESP_CHANNEL_CURRENT 0
+#define ESP_BRUCE_ID "BRUCE"
+#define ESP_BRUCE_VER 0
 #define ESP_FILENAME_SIZE 30
 #define ESP_FILEPATH_SIZE 50
-#define ESP_DATA_SIZE 150
+#define ESP_DATA_SIZE 152
 
 class EspConnection {
 public:
-    enum Status {
+    enum State {
         CONNECTING,
         STARTED,
         WAITING,
@@ -20,24 +23,62 @@ public:
         ABORTED,
     };
 
-    // Struct has to be 250 B max
-    struct Message {
-        char filename[ESP_FILENAME_SIZE];
-        char filepath[ESP_FILEPATH_SIZE];
-        char data[ESP_DATA_SIZE];
-        size_t dataSize;
-        size_t totalBytes;
-        size_t bytesSent;
-        bool isFile;
-        bool done;
-        bool ping;
-        bool pong;
+    enum MessageType {
+        MSG_TYPE_NOP = 0, // Does nothing.
+        MSG_TYPE_PING,    // Device search request.
+        MSG_TYPE_PONG,    // Device search response.
+        MSG_TYPE_FILE,    // Share file.
+        MSG_TYPE_COMMAND, // Execute remote command.
+        MSG_TYPE_CHAT,    // Text messages.
+        MSG_TYPE_MAX,
+    };
+
+    enum MessageFlags {
+        MSG_FLAG_DONE = 0x01,
+    };
+
+#pragma pack(1)
+    // Message header (10 bytes)
+    struct MessageHeader {
+        char magic[5];       // 5 - protocol identifier
+        uint8_t protocolVer; // 1 - to deal with breaking changes
+        uint8_t type;        // 1 - packet type
+        uint8_t flags;       // 1 - general purpose flags
+        uint16_t dataSize;   // 2 - amount of data for useful payload
 
         // Constructor to initialize defaults
-        Message()
-            : dataSize(0), totalBytes(0), bytesSent(0), isFile(false), done(false), ping(false),
-              pong(false) {}
+        MessageHeader() : protocolVer(ESP_BRUCE_VER), type(MSG_TYPE_NOP), flags(0), dataSize(0) {
+            memcpy(magic, ESP_BRUCE_ID, 5);
+        }
     };
+
+    // Message body (240 bytes)
+    struct MessageBody {
+        size_t totalBytes;                // 4 - file size
+        size_t bytesSent;                 // 4 - block offset
+        char filename[ESP_FILENAME_SIZE]; // 30
+        char filepath[ESP_FILEPATH_SIZE]; // 50
+        char data[ESP_DATA_SIZE];         // 152
+    };
+
+    // Max struct size (ESP-NOW v1.0 - 250, ESP-NOW v2.0 - 1490)
+    // Struct should be 250B max (10 bytes Header + 240 for Message)
+    struct Message {
+        MessageHeader header;
+        union {
+            MessageBody body;
+            char rawBody[sizeof(MessageBody)];
+        };
+        char zero; // terminator for text data
+        uint8_t mac[6]; // track mac address for received packets
+
+        // Constructor to initialize defaults
+        Message() : zero('\0') {
+            memset(rawBody, 0, sizeof(MessageBody)); // fill everything with zeroes
+            memset(mac, 0, sizeof(mac));
+        }
+    };
+#pragma pack()
 
     EspConnection();
     ~EspConnection();
@@ -52,14 +93,16 @@ public:
     };
 
 protected:
-    Status recvStatus;
-    Status sendStatus;
+    State rxState;
+    State txState;
     uint8_t dstAddress[6];
     uint8_t broadcastAddress[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
     std::vector<Message> recvQueue;
 
     bool beginSend();
     bool beginEspnow();
+
+    String msgTypeToString(uint8_t type);
 
     Message createMessage(String text);
     Message createFileMessage(File file);
@@ -69,7 +112,7 @@ protected:
     void sendPing();
     void sendPong(const uint8_t *mac);
 
-    bool setupPeer(const uint8_t *mac);
+    bool addPeer(const uint8_t *mac);
     void appendPeerToList(const uint8_t *mac);
     void setDstAddress(const uint8_t *address) { memcpy(dstAddress, address, 6); }
 
