@@ -5,6 +5,8 @@
 #include <globals.h>
 #include <vector>
 
+#define ESP_BRUCE_ID "BRUCE"
+#define ESP_BRUCE_VER 0
 #define ESP_FILENAME_SIZE 30
 #define ESP_FILEPATH_SIZE 50
 #define ESP_DATA_SIZE 150
@@ -20,24 +22,34 @@ public:
         ABORTED,
     };
 
-    // Struct has to be 250 B max
+    enum MessageType {
+        MSG_TYPE_NOP = 0, // Does nothing.
+        MSG_TYPE_PING,
+        MSG_TYPE_PONG,
+        MSG_TYPE_FILE,
+        MSG_TYPE_COMMAND,
+    };
+
+    // Struct has to be 250 B max (8 bytes Header + 242 for Message)
+#pragma pack(1)
     struct Message {
-        char filename[ESP_FILENAME_SIZE];
-        char filepath[ESP_FILEPATH_SIZE];
-        char data[ESP_DATA_SIZE];
-        size_t dataSize;
-        size_t totalBytes;
-        size_t bytesSent;
-        bool isFile;
-        bool done;
-        bool ping;
-        bool pong;
+        char magic[5];                    // 5 - protocol identifier
+        uint8_t protocolVer;              // 1 - to deal with breaking changes
+        uint8_t type;                     // 1 - packet type
+        bool done;                        // 1
+        char filename[ESP_FILENAME_SIZE]; // 30
+        char filepath[ESP_FILEPATH_SIZE]; // 50
+        char data[ESP_DATA_SIZE];         // 150
+        size_t dataSize;                  // 4
+        size_t totalBytes;                // 4
+        size_t bytesSent;                 // 4
 
         // Constructor to initialize defaults
-        Message()
-            : dataSize(0), totalBytes(0), bytesSent(0), isFile(false), done(false), ping(false),
-              pong(false) {}
+        Message() : protocolVer(ESP_BRUCE_VER), type(MSG_TYPE_NOP), done(false), dataSize(0), totalBytes(0) {
+            memcpy(magic, ESP_BRUCE_ID, 5);
+        }
     };
+#pragma pack()
 
     EspConnection();
     ~EspConnection();
@@ -60,6 +72,8 @@ protected:
 
     bool beginSend();
     bool beginEspnow();
+
+    String msgTypeToString(uint8_t type);
 
     Message createMessage(String text);
     Message createFileMessage(File file);

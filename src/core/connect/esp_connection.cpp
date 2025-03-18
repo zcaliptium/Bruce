@@ -70,7 +70,7 @@ EspConnection::Message EspConnection::createFileMessage(File file) {
     Message message;
     String path = String(file.path());
 
-    message.isFile = true;
+    message.type = MSG_TYPE_FILE;
     message.totalBytes = file.size();
 
     strncpy(message.filename, file.name(), ESP_FILENAME_SIZE);
@@ -81,14 +81,14 @@ EspConnection::Message EspConnection::createFileMessage(File file) {
 
 EspConnection::Message EspConnection::createPingMessage() {
     Message message;
-    message.ping = true;
+    message.type = MSG_TYPE_PING;
 
     return message;
 }
 
 EspConnection::Message EspConnection::createPongMessage() {
     Message message;
-    message.pong = true;
+    message.type = MSG_TYPE_PONG;
 
     return message;
 }
@@ -101,9 +101,7 @@ void EspConnection::sendPing() {
     Message message = createPingMessage();
 
     esp_err_t response = esp_now_send(broadcastAddress, (uint8_t *)&message, sizeof(message));
-    if (response != ESP_OK) {
-        Serial.printf("Send ping response: %s\n", esp_err_to_name(response));
-    }
+    if (response != ESP_OK) { Serial.printf("Send ping response: %s\n", esp_err_to_name(response)); }
 
     delay(500);
 }
@@ -114,9 +112,7 @@ void EspConnection::sendPong(const uint8_t *mac) {
     if (!setupPeer(mac)) return;
 
     esp_err_t response = esp_now_send(mac, (uint8_t *)&message, sizeof(message));
-    if (response != ESP_OK) {
-        Serial.printf("Send pong response: %s\n", esp_err_to_name(response));
-    }
+    if (response != ESP_OK) { Serial.printf("Send pong response: %s\n", esp_err_to_name(response)); }
 }
 
 bool EspConnection::setupPeer(const uint8_t *mac) {
@@ -131,25 +127,33 @@ bool EspConnection::setupPeer(const uint8_t *mac) {
     return esp_now_add_peer(&peerInfo) == ESP_OK;
 }
 
+String EspConnection::msgTypeToString(uint8_t type) {
+    switch (type) {
+        case MSG_TYPE_NOP: return "MSG_NOP";
+        case MSG_TYPE_PING: return "MSG_PING";
+        case MSG_TYPE_PONG: return "MSG_PONG";
+        case MSG_TYPE_FILE: return "MSG_FILE";
+        case MSG_TYPE_COMMAND: return "MSG_COMMAND";
+    }
+
+    return "<invalid>";
+}
+
 void EspConnection::printMessage(Message message) {
     delay(100);
 
     Serial.println("Message Details:");
-    if (message.ping) {
-        Serial.println("Ping: " + String(message.ping));
-        Serial.println("");
-        return;
-    }
-    if (message.pong) {
-        Serial.println("Pong: " + String(message.pong));
-        Serial.println("");
-        return;
-    }
 
-    if (message.isFile) {
-        Serial.println("Filename: " + String(message.filename));
-        Serial.println("Filepath: " + String(message.filepath));
-    }
+    // Print message header
+    Serial.println("Version: " + String(message.protocolVer));
+    Serial.println("Type: " + msgTypeToString(message.type));
+    Serial.println("");
+
+    if (message.type != MSG_TYPE_FILE && message.type != MSG_TYPE_COMMAND) { return; }
+
+    // for MSG_FILE & MSG_COMMAND
+    Serial.println("Filename: " + String(message.filename));
+    Serial.println("Filepath: " + String(message.filepath));
     Serial.println("Data Size: " + String(message.dataSize));
     Serial.println("Total Bytes: " + String(message.totalBytes));
     Serial.println("Bytes Sent: " + String(message.bytesSent));
@@ -189,6 +193,10 @@ void EspConnection::onDataSent(const uint8_t *mac_addr, esp_now_send_status_t st
 }
 
 void EspConnection::onDataRecv(const uint8_t *mac, const uint8_t *incomingData, int len) {
+    if (strncmp((const char *)incomingData, ESP_BRUCE_ID, 5) != 0) {
+        return; // ignore non-Bruce packets
+    }
+
     Message recvMessage;
 
     // Use reinterpret_cast and copy assignment
@@ -197,8 +205,22 @@ void EspConnection::onDataRecv(const uint8_t *mac, const uint8_t *incomingData, 
 
     printMessage(recvMessage);
 
-    if (recvMessage.ping) return sendPong(mac);
-    if (recvMessage.pong) return appendPeerToList(mac);
+    switch (recvMessage.type) {
+        case MSG_TYPE_NOP: return; // do nothing
 
-    recvQueue.push_back(recvMessage);
+        case MSG_TYPE_PING: {
+            sendPong(mac);
+            return;
+        }
+
+        case MSG_TYPE_PONG: {
+            appendPeerToList(mac);
+            return;
+        }
+
+        case MSG_TYPE_FILE:
+        case MSG_TYPE_COMMAND: {
+            recvQueue.push_back(recvMessage);
+        }
+    }
 }

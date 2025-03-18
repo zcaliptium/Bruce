@@ -87,6 +87,9 @@ void FileSharing::receiveFile() {
             Message recvFileMessage = recvQueue.front();
             recvQueue.erase(recvQueue.begin());
 
+            // Filter non-file messages.
+            if (recvFileMessage.type != MSG_TYPE_FILE) { continue; }
+
             progressHandler(recvFileMessage.bytesSent, recvFileMessage.totalBytes, "Receiving...");
 
             if (!appendToFile(recvFileMessage)) {
@@ -95,8 +98,7 @@ void FileSharing::receiveFile() {
             }
             if (recvFileMessage.done) {
                 Serial.println("Recv done");
-                recvStatus =
-                    recvFileMessage.bytesSent == recvFileMessage.totalBytes ? SUCCESS : FAILED;
+                recvStatus = recvFileMessage.bytesSent == recvFileMessage.totalBytes ? SUCCESS : FAILED;
             }
         }
 

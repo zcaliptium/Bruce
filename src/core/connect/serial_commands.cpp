@@ -89,6 +89,9 @@ void EspSerialCmd::receiveCommands() {
             recvMessage = recvQueue.front();
             recvQueue.erase(recvQueue.begin());
 
+            // Filter non-command messages.
+            if (recvMessage.type != MSG_TYPE_COMMAND) { continue; }
+
             recvCommand = recvMessage.data;
             Serial.println(recvCommand);
 
@@ -111,6 +114,7 @@ EspSerialCmd::Message EspSerialCmd::createCmdMessage() {
 
     String command = keyboard("", ESP_DATA_SIZE, "Serial Command");
     Message msg = createMessage(command);
+    msg.type = MSG_TYPE_COMMAND;
     printMessage(msg);
 
     return msg;
