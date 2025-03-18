@@ -8,11 +8,13 @@
 #define ESP_CHANNEL_CURRENT 0
 #define ESP_BRUCE_ID "BRUCE"
 #define ESP_BRUCE_VER 0
+#define ESP_CHANNEL_CURRENT 0
+#define ESP_BRUCE_ID "BRUCE"
+#define ESP_BRUCE_VER 0
 #define ESP_FILENAME_SIZE 30
 #define ESP_FILEPATH_SIZE 50
 #define ESP_DATA_SIZE 150
 #define ESP_RAWDATA_SIZE (ESP_NOW_MAX_DATA_LEN - sizeof(MessageHeader))
-#define ESP_CMDLONG_SIZE 1024
 
 class EspConnection {
 public:
@@ -41,12 +43,6 @@ public:
         MSG_FLAG_DONE = 0x01,
     };
 
-    enum MessageFilter {
-        MSG_FILTER_NONE = 0,
-        MSG_FILTER_SERIAL,
-        MSG_FILTER_FILE,
-    };
-
 #pragma pack(1)
     // Sequence transfer state.
     struct SeqTransfer {
@@ -56,7 +52,7 @@ public:
         size_t size;        // full size (up to 4 GB)
         size_t dataCounter; // amount of exchanged bytes
         String filename;    // file sharing - local full path
-        String command;     // serial - text command
+        String cmd;         // serial - text command
 
         // Constructor to initialize defaults.
         SeqTransfer() { reset(); }
@@ -156,7 +152,6 @@ public:
     };
 
 protected:
-    MessageFilter rxQueueFilter;
     SeqTransfer rxSeq;
     SeqTransfer txSeq;
 
