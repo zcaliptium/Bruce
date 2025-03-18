@@ -27,8 +27,8 @@ void EspSerialCmd::sendCommands() {
         if (sendStatus == CONNECTING) {
             message = createCmdMessage();
 
-            if (message.dataSize > 0) {
-                esp_err_t response = esp_now_send(dstAddress, (uint8_t *)&message, sizeof(message));
+            if (message.header.dataSize > 0) {
+                esp_err_t response = esp_now_send(dstAddress, (uint8_t *)&message, ESP_NOW_MAX_DATA_LEN);
                 if (response == ESP_OK) sendStatus = SUCCESS;
                 else {
                     Serial.printf("Send command response: %s\n", esp_err_to_name(response));
@@ -46,7 +46,7 @@ void EspSerialCmd::sendCommands() {
         }
 
         if (sendStatus == SUCCESS) {
-            displaySentCommand(message.data);
+            displaySentCommand(message.body.data);
             sendStatus = WAITING;
         }
 
@@ -89,12 +89,15 @@ void EspSerialCmd::receiveCommands() {
             recvMessage = recvQueue.front();
             recvQueue.erase(recvQueue.begin());
 
-            recvCommand = recvMessage.data;
+            // Filter non-command messages.
+            if (recvMessage.header.type != MSG_TYPE_COMMAND) { continue; }
+
+            recvCommand = recvMessage.body.data;
             Serial.println(recvCommand);
 
-            if (recvMessage.done) {
+            if (recvMessage.header.flags & MSG_FLAG_DONE) {
                 Serial.println("Recv done");
-                recvStatus = recvMessage.bytesSent == recvMessage.totalBytes ? SUCCESS : FAILED;
+                recvStatus = recvMessage.body.bytesSent == recvMessage.body.totalBytes ? SUCCESS : FAILED;
             }
         }
 
@@ -111,6 +114,7 @@ EspSerialCmd::Message EspSerialCmd::createCmdMessage() {
 
     String command = keyboard("", ESP_DATA_SIZE, "Serial Command");
     Message msg = createMessage(command);
+    msg.header.type = MSG_TYPE_COMMAND;
     printMessage(msg);
 
     return msg;

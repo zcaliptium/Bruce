@@ -35,6 +35,12 @@ bool EspConnection::beginSend() {
 bool EspConnection::beginEspnow() {
     WiFi.mode(WIFI_STA);
 
+    if ((sizeof(MessageHeader) + sizeof(MessageBody)) != ESP_NOW_MAX_DATA_LEN) {
+        displayError("(Header + Body) != ESP_NOW_MAX_DATA_LEN");
+        delay(1000);
+        return false;
+    }
+
     if (esp_now_init() != ESP_OK) {
         displayError("Error initializing share");
         delay(1000);
@@ -56,12 +62,12 @@ bool EspConnection::beginEspnow() {
 EspConnection::Message EspConnection::createMessage(String text) {
     Message message;
 
-    message.dataSize = text.length();
-    message.totalBytes = text.length();
-    message.bytesSent = text.length();
-    message.done = true;
+    message.header.dataSize = text.length();
+    message.header.flags |= MSG_FLAG_DONE;
+    message.body.totalBytes = text.length();
+    message.body.bytesSent = text.length();
 
-    strncpy(message.data, text.c_str(), ESP_DATA_SIZE);
+    strncpy(message.body.data, text.c_str(), ESP_DATA_SIZE);
 
     return message;
 }
@@ -70,25 +76,25 @@ EspConnection::Message EspConnection::createFileMessage(File file) {
     Message message;
     String path = String(file.path());
 
-    message.isFile = true;
-    message.totalBytes = file.size();
+    message.header.type = MSG_TYPE_FILE;
+    message.body.totalBytes = file.size();
 
-    strncpy(message.filename, file.name(), ESP_FILENAME_SIZE);
-    strncpy(message.filepath, path.substring(0, path.lastIndexOf("/")).c_str(), ESP_FILEPATH_SIZE);
+    strncpy(message.body.filename, file.name(), ESP_FILENAME_SIZE);
+    strncpy(message.body.filepath, path.substring(0, path.lastIndexOf("/")).c_str(), ESP_FILEPATH_SIZE);
 
     return message;
 }
 
 EspConnection::Message EspConnection::createPingMessage() {
     Message message;
-    message.ping = true;
+    message.header.type = MSG_TYPE_PING;
 
     return message;
 }
 
 EspConnection::Message EspConnection::createPongMessage() {
     Message message;
-    message.pong = true;
+    message.header.type = MSG_TYPE_PONG;
 
     return message;
 }
@@ -100,10 +106,8 @@ void EspConnection::sendPing() {
 
     Message message = createPingMessage();
 
-    esp_err_t response = esp_now_send(broadcastAddress, (uint8_t *)&message, sizeof(message));
-    if (response != ESP_OK) {
-        Serial.printf("Send ping response: %s\n", esp_err_to_name(response));
-    }
+    esp_err_t response = esp_now_send(broadcastAddress, (uint8_t *)&message, ESP_NOW_MAX_DATA_LEN);
+    if (response != ESP_OK) { Serial.printf("Send ping response: %s\n", esp_err_to_name(response)); }
 
     delay(500);
 }
@@ -113,10 +117,8 @@ void EspConnection::sendPong(const uint8_t *mac) {
 
     if (!setupPeer(mac)) return;
 
-    esp_err_t response = esp_now_send(mac, (uint8_t *)&message, sizeof(message));
-    if (response != ESP_OK) {
-        Serial.printf("Send pong response: %s\n", esp_err_to_name(response));
-    }
+    esp_err_t response = esp_now_send(mac, (uint8_t *)&message, ESP_NOW_MAX_DATA_LEN);
+    if (response != ESP_OK) { Serial.printf("Send pong response: %s\n", esp_err_to_name(response)); }
 }
 
 bool EspConnection::setupPeer(const uint8_t *mac) {
@@ -131,35 +133,44 @@ bool EspConnection::setupPeer(const uint8_t *mac) {
     return esp_now_add_peer(&peerInfo) == ESP_OK;
 }
 
+String EspConnection::msgTypeToString(uint8_t type) {
+    switch (type) {
+        case MSG_TYPE_NOP: return "MSG_NOP";
+        case MSG_TYPE_PING: return "MSG_PING";
+        case MSG_TYPE_PONG: return "MSG_PONG";
+        case MSG_TYPE_FILE: return "MSG_FILE";
+        case MSG_TYPE_COMMAND: return "MSG_COMMAND";
+        case MSG_TYPE_CHAT: return "MSG_CHAT";
+    }
+
+    return "<invalid>";
+}
+
 void EspConnection::printMessage(Message message) {
     delay(100);
 
     Serial.println("Message Details:");
-    if (message.ping) {
-        Serial.println("Ping: " + String(message.ping));
-        Serial.println("");
-        return;
-    }
-    if (message.pong) {
-        Serial.println("Pong: " + String(message.pong));
-        Serial.println("");
-        return;
-    }
 
-    if (message.isFile) {
-        Serial.println("Filename: " + String(message.filename));
-        Serial.println("Filepath: " + String(message.filepath));
-    }
-    Serial.println("Data Size: " + String(message.dataSize));
-    Serial.println("Total Bytes: " + String(message.totalBytes));
-    Serial.println("Bytes Sent: " + String(message.bytesSent));
-    Serial.println("Done: " + String(message.done));
+    // Print message header
+    Serial.println("Version: " + String(message.header.protocolVer));
+    Serial.println("Type: " + msgTypeToString(message.header.type));
+    Serial.println("Flags: " + String(message.header.flags));
+    Serial.println("Data Size: " + String(message.header.dataSize));
+    Serial.println("");
+
+    if (message.header.type != MSG_TYPE_FILE && message.header.type != MSG_TYPE_COMMAND) { return; }
+
+    // for MSG_TYPE_FILE & MSG_TYPE_COMMAND
+    Serial.println("Total Bytes: " + String(message.body.totalBytes));
+    Serial.println("Bytes Sent: " + String(message.body.bytesSent));
+    Serial.println("Filename: " + String(message.body.filename));
+    Serial.println("Filepath: " + String(message.body.filepath));
     Serial.print("Data: ");
 
     // Append data to the result if dataSize is greater than 0
-    if (message.dataSize > 0) {
-        for (size_t i = 0; i < message.dataSize; ++i) {
-            Serial.print((char)message.data[i]); // Assuming data contains valid characters
+    if (message.header.dataSize > 0) {
+        for (size_t i = 0; i < message.header.dataSize; ++i) {
+            Serial.print((char)message.body.data[i]); // Assuming data contains valid characters
         }
     } else {
         Serial.println("No data");
@@ -189,6 +200,11 @@ void EspConnection::onDataSent(const uint8_t *mac_addr, esp_now_send_status_t st
 }
 
 void EspConnection::onDataRecv(const uint8_t *mac, const uint8_t *incomingData, int len) {
+    // there should be place for header & valid signature
+    if (len < sizeof(MessageHeader) || strncmp((const char *)incomingData, ESP_BRUCE_ID, 5) != 0) {
+        return; // ignore non-Bruce packets
+    }
+
     Message recvMessage;
 
     // Use reinterpret_cast and copy assignment
@@ -197,8 +213,22 @@ void EspConnection::onDataRecv(const uint8_t *mac, const uint8_t *incomingData, 
 
     printMessage(recvMessage);
 
-    if (recvMessage.ping) return sendPong(mac);
-    if (recvMessage.pong) return appendPeerToList(mac);
+    switch (recvMessage.header.type) {
+        case MSG_TYPE_NOP: return; // do nothing
 
-    recvQueue.push_back(recvMessage);
+        case MSG_TYPE_PING: {
+            sendPong(mac);
+            return;
+        }
+
+        case MSG_TYPE_PONG: {
+            appendPeerToList(mac);
+            return;
+        }
+
+        case MSG_TYPE_FILE:
+        case MSG_TYPE_COMMAND: {
+            recvQueue.push_back(recvMessage);
+        }
+    }
 }
