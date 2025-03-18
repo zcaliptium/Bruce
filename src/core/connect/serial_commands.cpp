@@ -2,7 +2,7 @@
 #include "core/display.h"
 #include "core/mykeyboard.h"
 
-EspSerialCmd::EspSerialCmd() {}
+EspSerialCmd::EspSerialCmd() { rxQueueFilter = MSG_FILTER_SERIAL; }
 
 void EspSerialCmd::sendCommands() {
     displayBanner(APP_MODE_CMDSSEND);
@@ -11,7 +11,7 @@ void EspSerialCmd::sendCommands() {
     if (!beginSend()) return;
 
     txState = STATE_CONNECTING;
-    Message message;
+    Message txMessage;
 
     delay(100);
 
@@ -25,10 +25,10 @@ void EspSerialCmd::sendCommands() {
         if (check(SelPress)) { txState = STATE_CONNECTING; }
 
         if (txState == STATE_CONNECTING) {
-            message = createCmdMessage();
+            txMessage = createCmdMessage();
 
-            if (message.dataSize > 0) {
-                esp_err_t response = esp_now_send(dstAddress, (uint8_t *)&message, sizeof(message));
+            if (txMessage.head.dataSize > 0) {
+                esp_err_t response = esp_now_send(dstAddress, (uint8_t *)&txMessage, ESP_NOW_MAX_DATA_LEN);
                 if (response == ESP_OK) txState = STATE_DONE;
                 else {
                     Serial.printf("Send command response: %s\n", esp_err_to_name(response));
@@ -46,7 +46,7 @@ void EspSerialCmd::sendCommands() {
         }
 
         if (txState == STATE_DONE) {
-            displaySentStatus(message.data, true);
+            displaySentStatus(txMessage.getData(), true);
             txState = STATE_WAITING;
         }
 
@@ -63,7 +63,7 @@ void EspSerialCmd::receiveCommands() {
     rxCommand = "";
     rxQueue.clear();
     rxState = STATE_CONNECTING;
-    Message recvMessage;
+    Message rxMessage;
 
     if (!beginEspnow()) return;
 
@@ -86,16 +86,27 @@ void EspSerialCmd::receiveCommands() {
         }
 
         if (!rxQueue.empty()) {
-            recvMessage = rxQueue.front();
+            rxMessage = rxQueue.front();
             rxQueue.erase(rxQueue.begin());
 
-            rxCommand = recvMessage.getData();
-            Serial.println(rxCommand);
+            if (rxMessage.head.type != MSG_TYPE_CMDLONG) {
+                if (rxSeq.isStarted) {
+                    continue; // We accept only CMDLONG for initiated tranfer.
+                }
 
-            if (recvMessage.done) {
+                if (rxMessage.head.type != MSG_TYPE_CMDTINY) {
+                    continue; // We accept only CMDTINY for non-initiated transfers.
+                }
+
+                // Process small command
+                rxCommand = rxMessage.getData();
+                Serial.println(rxCommand);
                 Serial.println("Recv done");
-                rxState = recvMessage.bytesSent == recvMessage.totalBytes ? STATE_DONE : STATE_FAILED;
+                rxState = STATE_DONE;
+                continue;
             }
+
+            // process CMDLONG
         }
 
         delay(100);
@@ -109,8 +120,14 @@ EspSerialCmd::Message EspSerialCmd::createCmdMessage() {
     tft.fillScreen(bruceConfig.bgColor);
     delay(500);
 
-    String command = keyboard("", ESP_DATA_SIZE, "Serial Command");
-    Message msg = createMessage(command);
+    Message msg;
+    msg.head.type = MSG_TYPE_CMDTINY;
+
+    String command = keyboard("", sizeof(FileHeadBlock), "Serial Command");
+    msg.head.flags |= MSG_FLAG_DONE;
+    msg.head.dataSize = min(command.length(), msg.maxData());
+    strncpy(msg.rawBody, command.c_str(), msg.maxData());
+
     printMessage(msg);
 
     return msg;

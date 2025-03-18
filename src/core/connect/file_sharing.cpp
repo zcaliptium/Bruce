@@ -1,7 +1,7 @@
 #include "file_sharing.h"
 #include "core/display.h"
-#include <SD.h>
-FileSharing::FileSharing() {}
+
+FileSharing::FileSharing() { rxQueueFilter = MSG_FILTER_FILE; }
 
 void FileSharing::sendFile() {
     displayBanner(APP_MODE_FILESEND);
@@ -30,19 +30,22 @@ void FileSharing::sendFile() {
         if (check(EscPress)) txState = STATE_BREAK;
 
         if (txState == STATE_BREAK || txState == STATE_FAILED) {
-            message.done = true;
-            message.dataSize = 0;
-            esp_now_send(dstAddress, (uint8_t *)&message, sizeof(message));
+            message.head.flags |= MSG_FLAG_DONE;
+            message.head.dataSize = 0;
+            esp_now_send(dstAddress, (uint8_t *)&message, ESP_NOW_MAX_DATA_LEN);
             displayError("Error sending file");
             break;
         }
 
         size_t bytesRead = file.readBytes(message.getData(), message.maxData());
-        message.dataSize = bytesRead;
-        message.bytesSent = min(message.bytesSent + bytesRead, message.totalBytes);
-        message.done = message.bytesSent == message.totalBytes;
+        message.head.dataSize = bytesRead;
+        message.seq.bytesSent = min(message.seq.bytesSent + bytesRead, message.seq.totalBytes);
 
-        response = esp_now_send(dstAddress, (uint8_t *)&message, sizeof(message));
+        if (message.seq.bytesSent == message.seq.totalBytes) {
+            message.head.flags |= MSG_FLAG_DONE; // mark as completed
+        }
+
+        response = esp_now_send(dstAddress, (uint8_t *)&message, ESP_NOW_MAX_DATA_LEN);
         if (response != ESP_OK) {
             Serial.printf("Send file response: %s\n", esp_err_to_name(response));
             txState = STATE_FAILED;
@@ -52,7 +55,7 @@ void FileSharing::sendFile() {
         delay(100);
     }
 
-    if (message.bytesSent == message.totalBytes) displaySuccess("File sent");
+    if (message.seq.bytesSent == message.seq.totalBytes) displaySuccess("File sent");
 
     file.close();
     delay(1000);
@@ -87,15 +90,19 @@ void FileSharing::receiveFile() {
             Message recvFileMessage = rxQueue.front();
             rxQueue.erase(rxQueue.begin());
 
-            progressHandler(recvFileMessage.bytesSent, recvFileMessage.totalBytes, "Receiving...");
+            // Filter non-file messages.
+            if (recvFileMessage.head.type != MSG_TYPE_FILEHEAD) { continue; }
+
+            progressHandler(recvFileMessage.seq.bytesSent, recvFileMessage.seq.totalBytes, "Receiving...");
 
             if (!appendToFile(recvFileMessage)) {
                 rxState = STATE_FAILED;
                 Serial.println("Failed appending to file");
             }
-            if (recvFileMessage.done) {
+            if (recvFileMessage.head.flags & MSG_FLAG_DONE) {
                 Serial.println("Recv done");
-                rxState = recvFileMessage.bytesSent == recvFileMessage.totalBytes ? STATE_DONE : STATE_FAILED;
+                rxState = recvFileMessage.seq.bytesSent == recvFileMessage.seq.totalBytes ? STATE_DONE
+                                                                                          : STATE_FAILED;
             }
         }
 
@@ -124,15 +131,15 @@ bool FileSharing::appendToFile(FileSharing::Message fileMessage) {
     File file = (*fs).open(rxFileName, FILE_APPEND);
     if (!file) return false;
 
-    file.write((const uint8_t *)fileMessage.getData(), fileMessage.dataSize);
+    file.write((const uint8_t *)fileMessage.getData(), fileMessage.head.dataSize);
     file.close();
 
     return true;
 }
 
 void FileSharing::createFilename(FS *fs, FileSharing::Message fileMessage) {
-    String messageFilename = String(fileMessage.filename);
-    String messageFilepath = String(fileMessage.filepath);
+    String messageFilename = String(fileMessage.fhb.filename);
+    String messageFilepath = String(fileMessage.fhb.filepath);
 
     String filename = messageFilename.substring(0, messageFilename.lastIndexOf("."));
     String ext = messageFilename.substring(messageFilename.lastIndexOf("."));
