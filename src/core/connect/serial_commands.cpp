@@ -90,12 +90,12 @@ void EspSerialCmd::receiveCommands() {
             recvQueue.erase(recvQueue.begin());
 
             // Filter non-command messages.
-            if (recvMessage.type != MSG_TYPE_COMMAND) { continue; }
+            if (recvMessage.header.type != MSG_TYPE_COMMAND) { continue; }
 
             recvCommand = recvMessage.data;
             Serial.println(recvCommand);
 
-            if (recvMessage.done) {
+            if (recvMessage.header.done) {
                 Serial.println("Recv done");
                 recvStatus = recvMessage.bytesSent == recvMessage.totalBytes ? SUCCESS : FAILED;
             }
@@ -114,7 +114,7 @@ EspSerialCmd::Message EspSerialCmd::createCmdMessage() {
 
     String command = keyboard("", ESP_DATA_SIZE, "Serial Command");
     Message msg = createMessage(command);
-    msg.type = MSG_TYPE_COMMAND;
+    msg.header.type = MSG_TYPE_COMMAND;
     printMessage(msg);
 
     return msg;

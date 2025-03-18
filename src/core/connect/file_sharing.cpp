@@ -30,7 +30,7 @@ void FileSharing::sendFile() {
         if (check(EscPress)) sendStatus = ABORTED;
 
         if (sendStatus == ABORTED || sendStatus == FAILED) {
-            message.done = true;
+            message.header.done = true;
             message.dataSize = 0;
             esp_now_send(dstAddress, (uint8_t *)&message, sizeof(message));
             displayError("Error sending file");
@@ -40,7 +40,7 @@ void FileSharing::sendFile() {
         size_t bytesRead = file.readBytes(message.data, ESP_DATA_SIZE);
         message.dataSize = bytesRead;
         message.bytesSent = min(message.bytesSent + bytesRead, message.totalBytes);
-        message.done = message.bytesSent == message.totalBytes;
+        message.header.done = message.bytesSent == message.totalBytes;
 
         response = esp_now_send(dstAddress, (uint8_t *)&message, sizeof(message));
         if (response != ESP_OK) {
@@ -88,7 +88,7 @@ void FileSharing::receiveFile() {
             recvQueue.erase(recvQueue.begin());
 
             // Filter non-file messages.
-            if (recvFileMessage.type != MSG_TYPE_FILE) { continue; }
+            if (recvFileMessage.header.type != MSG_TYPE_FILE) { continue; }
 
             progressHandler(recvFileMessage.bytesSent, recvFileMessage.totalBytes, "Receiving...");
 
@@ -96,7 +96,7 @@ void FileSharing::receiveFile() {
                 recvStatus = FAILED;
                 Serial.println("Failed appending to file");
             }
-            if (recvFileMessage.done) {
+            if (recvFileMessage.header.done) {
                 Serial.println("Recv done");
                 recvStatus = recvFileMessage.bytesSent == recvFileMessage.totalBytes ? SUCCESS : FAILED;
             }

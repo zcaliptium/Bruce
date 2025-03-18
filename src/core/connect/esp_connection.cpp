@@ -59,7 +59,7 @@ EspConnection::Message EspConnection::createMessage(String text) {
     message.dataSize = text.length();
     message.totalBytes = text.length();
     message.bytesSent = text.length();
-    message.done = true;
+    message.header.done = true;
 
     strncpy(message.data, text.c_str(), ESP_DATA_SIZE);
 
@@ -70,7 +70,7 @@ EspConnection::Message EspConnection::createFileMessage(File file) {
     Message message;
     String path = String(file.path());
 
-    message.type = MSG_TYPE_FILE;
+    message.header.type = MSG_TYPE_FILE;
     message.totalBytes = file.size();
 
     strncpy(message.filename, file.name(), ESP_FILENAME_SIZE);
@@ -81,14 +81,14 @@ EspConnection::Message EspConnection::createFileMessage(File file) {
 
 EspConnection::Message EspConnection::createPingMessage() {
     Message message;
-    message.type = MSG_TYPE_PING;
+    message.header.type = MSG_TYPE_PING;
 
     return message;
 }
 
 EspConnection::Message EspConnection::createPongMessage() {
     Message message;
-    message.type = MSG_TYPE_PONG;
+    message.header.type = MSG_TYPE_PONG;
 
     return message;
 }
@@ -145,11 +145,11 @@ void EspConnection::printMessage(Message message) {
     Serial.println("Message Details:");
 
     // Print message header
-    Serial.println("Version: " + String(message.protocolVer));
-    Serial.println("Type: " + msgTypeToString(message.type));
+    Serial.println("Version: " + String(message.header.protocolVer));
+    Serial.println("Type: " + msgTypeToString(message.header.type));
     Serial.println("");
 
-    if (message.type != MSG_TYPE_FILE && message.type != MSG_TYPE_COMMAND) { return; }
+    if (message.header.type != MSG_TYPE_FILE && message.header.type != MSG_TYPE_COMMAND) { return; }
 
     // for MSG_FILE & MSG_COMMAND
     Serial.println("Filename: " + String(message.filename));
@@ -157,7 +157,7 @@ void EspConnection::printMessage(Message message) {
     Serial.println("Data Size: " + String(message.dataSize));
     Serial.println("Total Bytes: " + String(message.totalBytes));
     Serial.println("Bytes Sent: " + String(message.bytesSent));
-    Serial.println("Done: " + String(message.done));
+    Serial.println("Done: " + String(message.header.done));
     Serial.print("Data: ");
 
     // Append data to the result if dataSize is greater than 0
@@ -205,7 +205,7 @@ void EspConnection::onDataRecv(const uint8_t *mac, const uint8_t *incomingData, 
 
     printMessage(recvMessage);
 
-    switch (recvMessage.type) {
+    switch (recvMessage.header.type) {
         case MSG_TYPE_NOP: return; // do nothing
 
         case MSG_TYPE_PING: {
