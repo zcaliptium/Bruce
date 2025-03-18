@@ -5,7 +5,7 @@
 EspSerialCmd::EspSerialCmd() {}
 
 void EspSerialCmd::sendCommands() {
-    displayBanner();
+    displaySendBanner();
     padprintln("Waiting...");
 
     if (!beginSend()) return;
@@ -31,7 +31,7 @@ void EspSerialCmd::sendCommands() {
                 esp_err_t response = esp_now_send(dstAddress, (uint8_t *)&message, sizeof(message));
                 if (response == ESP_OK) sendStatus = SUCCESS;
                 else {
-                    Serial.printf("Send file response: %s\n", esp_err_to_name(response));
+                    Serial.printf("Send command response: %s\n", esp_err_to_name(response));
                     sendStatus = FAILED;
                 }
             } else {
@@ -57,7 +57,7 @@ void EspSerialCmd::sendCommands() {
 }
 
 void EspSerialCmd::receiveCommands() {
-    displayBanner();
+    displayRecvBanner();
     padprintln("Waiting...");
 
     recvCommand = "";
@@ -116,8 +116,13 @@ EspSerialCmd::Message EspSerialCmd::createCmdMessage() {
     return msg;
 }
 
-void EspSerialCmd::displayBanner() {
+void EspSerialCmd::displayRecvBanner() {
     drawMainBorderWithTitle("RECEIVE COMMANDS");
+    padprintln("");
+}
+
+void EspSerialCmd::displaySendBanner() {
+    drawMainBorderWithTitle("SEND COMMANDS");
     padprintln("");
 }
 
@@ -125,7 +130,7 @@ void EspSerialCmd::displayRecvCommand(bool success) {
     String execution = success ? "Execution success" : "Execution failed";
     Serial.println(execution);
 
-    displayBanner();
+    displayRecvBanner();
     padprintln("Command received: ");
     padprintln(recvCommand);
     padprintln("");
@@ -135,7 +140,7 @@ void EspSerialCmd::displayRecvCommand(bool success) {
 }
 
 void EspSerialCmd::displayRecvError() {
-    displayBanner();
+    displayRecvBanner();
     padprintln("Error receiving command");
     displayRecvFooter();
 }
@@ -146,14 +151,14 @@ void EspSerialCmd::displayRecvFooter() {
 }
 
 void EspSerialCmd::displaySentCommand(const char *command) {
-    displayBanner();
+    displaySendBanner();
     padprintln("Command sent: ");
     padprintln(command);
     displaySentFooter();
 }
 
 void EspSerialCmd::displaySentError() {
-    displayBanner();
+    displaySendBanner();
     padprintln("Error sending command");
     displaySentFooter();
 }
