@@ -95,7 +95,7 @@ void EspSerialCmd::receiveCommands() {
             recvCommand = recvMessage.data;
             Serial.println(recvCommand);
 
-            if (recvMessage.header.done) {
+            if (recvMessage.header.flags & MSG_FLAG_DONE) {
                 Serial.println("Recv done");
                 recvStatus = recvMessage.bytesSent == recvMessage.totalBytes ? SUCCESS : FAILED;
             }

@@ -56,10 +56,10 @@ bool EspConnection::beginEspnow() {
 EspConnection::Message EspConnection::createMessage(String text) {
     Message message;
 
+    message.header.flags |= MSG_FLAG_DONE;
     message.dataSize = text.length();
     message.totalBytes = text.length();
     message.bytesSent = text.length();
-    message.header.done = true;
 
     strncpy(message.data, text.c_str(), ESP_DATA_SIZE);
 
@@ -157,7 +157,7 @@ void EspConnection::printMessage(Message message) {
     Serial.println("Data Size: " + String(message.dataSize));
     Serial.println("Total Bytes: " + String(message.totalBytes));
     Serial.println("Bytes Sent: " + String(message.bytesSent));
-    Serial.println("Done: " + String(message.header.done));
+    Serial.println("Done: " + String(message.header.flags & MSG_FLAG_DONE));
     Serial.print("Data: ");
 
     // Append data to the result if dataSize is greater than 0

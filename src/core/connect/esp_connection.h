@@ -30,16 +30,20 @@ public:
         MSG_TYPE_COMMAND,
     };
 
+    enum MessageFlags {
+        MSG_FLAG_DONE = 0x01,
+    };
+
 #pragma pack(1)
     // Message header (8 bytes)
     struct MessageHeader {
         char magic[5];       // 5 - protocol identifier
         uint8_t protocolVer; // 1 - to deal with breaking changes
         uint8_t type;        // 1 - packet type
-        bool done;           // 1
+        uint8_t flags;       // 1 - general purpose flags
 
         // Constructor to initialize defaults
-        MessageHeader() : protocolVer(ESP_BRUCE_VER), type(MSG_TYPE_NOP), done(false) {
+        MessageHeader() : protocolVer(ESP_BRUCE_VER), type(MSG_TYPE_NOP), flags(0) {
             memcpy(magic, ESP_BRUCE_ID, 5);
         }
     };
