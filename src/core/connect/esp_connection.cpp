@@ -193,7 +193,8 @@ void EspConnection::onDataSent(const uint8_t *mac_addr, esp_now_send_status_t st
 }
 
 void EspConnection::onDataRecv(const uint8_t *mac, const uint8_t *incomingData, int len) {
-    if (strncmp((const char *)incomingData, ESP_BRUCE_ID, 5) != 0) {
+    // there should be place for header & valid signature
+    if (len < sizeof(MessageHeader) || strncmp((const char *)incomingData, ESP_BRUCE_ID, 5) != 0) {
         return; // ignore non-Bruce packets
     }
 
