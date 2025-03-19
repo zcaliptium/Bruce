@@ -31,16 +31,16 @@ void FileSharing::sendFile() {
 
         if (sendStatus == ABORTED || sendStatus == FAILED) {
             message.header.flags |= MSG_FLAG_DONE;
-            message.dataSize = 0;
+            message.body.dataSize = 0;
             esp_now_send(dstAddress, (uint8_t *)&message, sizeof(message));
             displayError("Error sending file");
             break;
         }
 
-        size_t bytesRead = file.readBytes(message.data, ESP_DATA_SIZE);
-        message.dataSize = bytesRead;
-        message.bytesSent = min(message.bytesSent + bytesRead, message.totalBytes);
-        if (message.bytesSent == message.totalBytes) { message.header.flags |= MSG_FLAG_DONE; }
+        size_t bytesRead = file.readBytes(message.body.data, ESP_DATA_SIZE);
+        message.body.dataSize = bytesRead;
+        message.body.bytesSent = min(message.body.bytesSent + bytesRead, message.body.totalBytes);
+        if (message.body.bytesSent == message.body.totalBytes) { message.header.flags |= MSG_FLAG_DONE; }
 
         response = esp_now_send(dstAddress, (uint8_t *)&message, sizeof(message));
         if (response != ESP_OK) {
@@ -52,7 +52,7 @@ void FileSharing::sendFile() {
         delay(100);
     }
 
-    if (message.bytesSent == message.totalBytes) displaySuccess("File sent");
+    if (message.body.bytesSent == message.body.totalBytes) displaySuccess("File sent");
 
     file.close();
     delay(1000);
@@ -90,7 +90,7 @@ void FileSharing::receiveFile() {
             // Filter non-file messages.
             if (recvFileMessage.header.type != MSG_TYPE_FILE) { continue; }
 
-            progressHandler(recvFileMessage.bytesSent, recvFileMessage.totalBytes, "Receiving...");
+            progressHandler(recvFileMessage.body.bytesSent, recvFileMessage.body.totalBytes, "Receiving...");
 
             if (!appendToFile(recvFileMessage)) {
                 recvStatus = FAILED;
@@ -98,7 +98,7 @@ void FileSharing::receiveFile() {
             }
             if (recvFileMessage.header.flags & MSG_FLAG_DONE) {
                 Serial.println("Recv done");
-                recvStatus = recvFileMessage.bytesSent == recvFileMessage.totalBytes ? SUCCESS : FAILED;
+                recvStatus = recvFileMessage.body.bytesSent == recvFileMessage.body.totalBytes ? SUCCESS : FAILED;
             }
         }
 
@@ -144,15 +144,15 @@ bool FileSharing::appendToFile(FileSharing::Message fileMessage) {
     File file = (*fs).open(recvFileName, FILE_APPEND);
     if (!file) return false;
 
-    file.write((const uint8_t *)fileMessage.data, fileMessage.dataSize);
+    file.write((const uint8_t *)fileMessage.body.data, fileMessage.body.dataSize);
     file.close();
 
     return true;
 }
 
 void FileSharing::createFilename(FS *fs, FileSharing::Message fileMessage) {
-    String messageFilename = String(fileMessage.filename);
-    String messageFilepath = String(fileMessage.filepath);
+    String messageFilename = String(fileMessage.body.filename);
+    String messageFilepath = String(fileMessage.body.filepath);
 
     String filename = messageFilename.substring(0, messageFilename.lastIndexOf("."));
     String ext = messageFilename.substring(messageFilename.lastIndexOf("."));

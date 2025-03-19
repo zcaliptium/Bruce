@@ -27,7 +27,7 @@ void EspSerialCmd::sendCommands() {
         if (sendStatus == CONNECTING) {
             message = createCmdMessage();
 
-            if (message.dataSize > 0) {
+            if (message.body.dataSize > 0) {
                 esp_err_t response = esp_now_send(dstAddress, (uint8_t *)&message, sizeof(message));
                 if (response == ESP_OK) sendStatus = SUCCESS;
                 else {
@@ -46,7 +46,7 @@ void EspSerialCmd::sendCommands() {
         }
 
         if (sendStatus == SUCCESS) {
-            displaySentCommand(message.data);
+            displaySentCommand(message.body.data);
             sendStatus = WAITING;
         }
 
@@ -92,12 +92,12 @@ void EspSerialCmd::receiveCommands() {
             // Filter non-command messages.
             if (recvMessage.header.type != MSG_TYPE_COMMAND) { continue; }
 
-            recvCommand = recvMessage.data;
+            recvCommand = recvMessage.body.data;
             Serial.println(recvCommand);
 
             if (recvMessage.header.flags & MSG_FLAG_DONE) {
                 Serial.println("Recv done");
-                recvStatus = recvMessage.bytesSent == recvMessage.totalBytes ? SUCCESS : FAILED;
+                recvStatus = recvMessage.body.bytesSent == recvMessage.body.totalBytes ? SUCCESS : FAILED;
             }
         }
 

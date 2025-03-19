@@ -57,11 +57,11 @@ EspConnection::Message EspConnection::createMessage(String text) {
     Message message;
 
     message.header.flags |= MSG_FLAG_DONE;
-    message.dataSize = text.length();
-    message.totalBytes = text.length();
-    message.bytesSent = text.length();
+    message.body.dataSize = text.length();
+    message.body.totalBytes = text.length();
+    message.body.bytesSent = text.length();
 
-    strncpy(message.data, text.c_str(), ESP_DATA_SIZE);
+    strncpy(message.body.data, text.c_str(), ESP_DATA_SIZE);
 
     return message;
 }
@@ -71,10 +71,10 @@ EspConnection::Message EspConnection::createFileMessage(File file) {
     String path = String(file.path());
 
     message.header.type = MSG_TYPE_FILE;
-    message.totalBytes = file.size();
+    message.body.totalBytes = file.size();
 
-    strncpy(message.filename, file.name(), ESP_FILENAME_SIZE);
-    strncpy(message.filepath, path.substring(0, path.lastIndexOf("/")).c_str(), ESP_FILEPATH_SIZE);
+    strncpy(message.body.filename, file.name(), ESP_FILENAME_SIZE);
+    strncpy(message.body.filepath, path.substring(0, path.lastIndexOf("/")).c_str(), ESP_FILEPATH_SIZE);
 
     return message;
 }
@@ -152,18 +152,18 @@ void EspConnection::printMessage(Message message) {
     if (message.header.type != MSG_TYPE_FILE && message.header.type != MSG_TYPE_COMMAND) { return; }
 
     // for MSG_FILE & MSG_COMMAND
-    Serial.println("Filename: " + String(message.filename));
-    Serial.println("Filepath: " + String(message.filepath));
-    Serial.println("Data Size: " + String(message.dataSize));
-    Serial.println("Total Bytes: " + String(message.totalBytes));
-    Serial.println("Bytes Sent: " + String(message.bytesSent));
+    Serial.println("Filename: " + String(message.body.filename));
+    Serial.println("Filepath: " + String(message.body.filepath));
+    Serial.println("Data Size: " + String(message.body.dataSize));
+    Serial.println("Total Bytes: " + String(message.body.totalBytes));
+    Serial.println("Bytes Sent: " + String(message.body.bytesSent));
     Serial.println("Done: " + String(message.header.flags & MSG_FLAG_DONE));
     Serial.print("Data: ");
 
     // Append data to the result if dataSize is greater than 0
-    if (message.dataSize > 0) {
-        for (size_t i = 0; i < message.dataSize; ++i) {
-            Serial.print((char)message.data[i]); // Assuming data contains valid characters
+    if (message.body.dataSize > 0) {
+        for (size_t i = 0; i < message.body.dataSize; ++i) {
+            Serial.print((char)message.body.data[i]); // Assuming data contains valid characters
         }
     } else {
         Serial.println("No data");

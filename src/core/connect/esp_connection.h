@@ -48,9 +48,8 @@ public:
         }
     };
 
-    // Struct has to be 250 B max (8 bytes Header + 242 for Message)
-    struct Message {
-        MessageHeader header;
+    // Message body (242 bytes)
+    struct MessageBody {
         char filename[ESP_FILENAME_SIZE]; // 30
         char filepath[ESP_FILEPATH_SIZE]; // 50
         char data[ESP_DATA_SIZE];         // 150
@@ -59,7 +58,13 @@ public:
         size_t bytesSent;                 // 4
 
         // Constructor to initialize defaults
-        Message() : dataSize(0), totalBytes(0) {}
+        MessageBody() : dataSize(0), totalBytes(0) {}
+    };
+
+    // Struct has to be 250 B max (8 bytes Header + 242 for Body)
+    struct Message {
+        MessageHeader header;
+        MessageBody body;
     };
 #pragma pack()
 
