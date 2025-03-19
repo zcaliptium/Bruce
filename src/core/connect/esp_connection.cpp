@@ -57,7 +57,7 @@ EspConnection::Message EspConnection::createMessage(String text) {
     Message message;
 
     message.header.flags |= MSG_FLAG_DONE;
-    message.body.dataSize = text.length();
+    message.header.dataSize = text.length();
     message.body.totalBytes = text.length();
     message.body.bytesSent = text.length();
 
@@ -147,6 +147,8 @@ void EspConnection::printMessage(Message message) {
     // Print message header
     Serial.println("Version: " + String(message.header.protocolVer));
     Serial.println("Type: " + msgTypeToString(message.header.type));
+    Serial.println("Flags: " + String(message.header.flags));
+    Serial.println("Data Size: " + String(message.header.dataSize));
     Serial.println("");
 
     if (message.header.type != MSG_TYPE_FILE && message.header.type != MSG_TYPE_COMMAND) { return; }
@@ -154,15 +156,14 @@ void EspConnection::printMessage(Message message) {
     // for MSG_FILE & MSG_COMMAND
     Serial.println("Filename: " + String(message.body.filename));
     Serial.println("Filepath: " + String(message.body.filepath));
-    Serial.println("Data Size: " + String(message.body.dataSize));
     Serial.println("Total Bytes: " + String(message.body.totalBytes));
     Serial.println("Bytes Sent: " + String(message.body.bytesSent));
     Serial.println("Done: " + String(message.header.flags & MSG_FLAG_DONE));
     Serial.print("Data: ");
 
     // Append data to the result if dataSize is greater than 0
-    if (message.body.dataSize > 0) {
-        for (size_t i = 0; i < message.body.dataSize; ++i) {
+    if (message.header.dataSize > 0) {
+        for (size_t i = 0; i < message.header.dataSize; ++i) {
             Serial.print((char)message.body.data[i]); // Assuming data contains valid characters
         }
     } else {

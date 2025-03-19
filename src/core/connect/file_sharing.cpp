@@ -31,14 +31,14 @@ void FileSharing::sendFile() {
 
         if (sendStatus == ABORTED || sendStatus == FAILED) {
             message.header.flags |= MSG_FLAG_DONE;
-            message.body.dataSize = 0;
+            message.header.dataSize = 0;
             esp_now_send(dstAddress, (uint8_t *)&message, sizeof(message));
             displayError("Error sending file");
             break;
         }
 
         size_t bytesRead = file.readBytes(message.body.data, ESP_DATA_SIZE);
-        message.body.dataSize = bytesRead;
+        message.header.dataSize = bytesRead;
         message.body.bytesSent = min(message.body.bytesSent + bytesRead, message.body.totalBytes);
         if (message.body.bytesSent == message.body.totalBytes) { message.header.flags |= MSG_FLAG_DONE; }
 
@@ -144,7 +144,7 @@ bool FileSharing::appendToFile(FileSharing::Message fileMessage) {
     File file = (*fs).open(recvFileName, FILE_APPEND);
     if (!file) return false;
 
-    file.write((const uint8_t *)fileMessage.body.data, fileMessage.body.dataSize);
+    file.write((const uint8_t *)fileMessage.body.data, fileMessage.header.dataSize);
     file.close();
 
     return true;

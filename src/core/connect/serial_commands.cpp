@@ -27,7 +27,7 @@ void EspSerialCmd::sendCommands() {
         if (sendStatus == CONNECTING) {
             message = createCmdMessage();
 
-            if (message.body.dataSize > 0) {
+            if (message.header.dataSize > 0) {
                 esp_err_t response = esp_now_send(dstAddress, (uint8_t *)&message, sizeof(message));
                 if (response == ESP_OK) sendStatus = SUCCESS;
                 else {

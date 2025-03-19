@@ -9,7 +9,7 @@
 #define ESP_BRUCE_VER 0
 #define ESP_FILENAME_SIZE 30
 #define ESP_FILEPATH_SIZE 50
-#define ESP_DATA_SIZE 150
+#define ESP_DATA_SIZE 152
 
 class EspConnection {
 public:
@@ -35,30 +35,30 @@ public:
     };
 
 #pragma pack(1)
-    // Message header (8 bytes)
+    // Message header (10 bytes)
     struct MessageHeader {
         char magic[5];       // 5 - protocol identifier
         uint8_t protocolVer; // 1 - to deal with breaking changes
         uint8_t type;        // 1 - packet type
         uint8_t flags;       // 1 - general purpose flags
+        uint16_t dataSize;   // 2 - amount of data for useful payload (ESP-NOW v1.0 - 250, ESP-NOW v2.0 - 1490)
 
         // Constructor to initialize defaults
-        MessageHeader() : protocolVer(ESP_BRUCE_VER), type(MSG_TYPE_NOP), flags(0) {
+        MessageHeader() : protocolVer(ESP_BRUCE_VER), type(MSG_TYPE_NOP), flags(0), dataSize(0) {
             memcpy(magic, ESP_BRUCE_ID, 5);
         }
     };
 
-    // Message body (242 bytes)
+    // Message body (240 bytes)
     struct MessageBody {
-        char filename[ESP_FILENAME_SIZE]; // 30
-        char filepath[ESP_FILEPATH_SIZE]; // 50
-        char data[ESP_DATA_SIZE];         // 150
-        size_t dataSize;                  // 4
         size_t totalBytes;                // 4
         size_t bytesSent;                 // 4
+        char filename[ESP_FILENAME_SIZE]; // 30
+        char filepath[ESP_FILEPATH_SIZE]; // 50
+        char data[ESP_DATA_SIZE];         // 152
 
         // Constructor to initialize defaults
-        MessageBody() : dataSize(0), totalBytes(0) {}
+        MessageBody() : totalBytes(0) {}
     };
 
     // Struct has to be 250 B max (8 bytes Header + 242 for Body)
