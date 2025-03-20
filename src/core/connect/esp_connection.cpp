@@ -53,15 +53,17 @@ bool EspConnection::beginEspnow() {
     return true;
 }
 
-EspConnection::Message EspConnection::createMessage(String text) {
+EspConnection::Message EspConnection::createTextMessage(String text) {
     Message message;
-
     message.header.flags |= MSG_FLAG_DONE;
-    message.header.dataSize = text.length();
-    message.body.totalBytes = text.length();
-    message.body.bytesSent = text.length();
 
-    strncpy(message.body.data, text.c_str(), ESP_DATA_SIZE);
+    if (text.length() > sizeof(MessageBody)) {
+        message.header.dataSize = sizeof(MessageBody);
+    } else {
+        message.header.dataSize = text.length();
+    }
+
+    strncpy(message.rawBody, text.c_str(), sizeof(MessageBody));
 
     return message;
 }
@@ -100,7 +102,7 @@ void EspConnection::sendPing() {
 
     Message message = createPingMessage();
 
-    esp_err_t response = esp_now_send(broadcastAddress, (uint8_t *)&message, sizeof(message));
+    esp_err_t response = esp_now_send(broadcastAddress, (uint8_t *)&message, ESP_NOW_MAX_DATA_LEN);
     if (response != ESP_OK) { Serial.printf("Send ping response: %s\n", esp_err_to_name(response)); }
 
     delay(500);
@@ -111,7 +113,7 @@ void EspConnection::sendPong(const uint8_t *mac) {
 
     if (!setupPeer(mac)) return;
 
-    esp_err_t response = esp_now_send(mac, (uint8_t *)&message, sizeof(message));
+    esp_err_t response = esp_now_send(mac, (uint8_t *)&message, ESP_NOW_MAX_DATA_LEN);
     if (response != ESP_OK) { Serial.printf("Send pong response: %s\n", esp_err_to_name(response)); }
 }
 
@@ -125,6 +127,11 @@ bool EspConnection::setupPeer(const uint8_t *mac) {
     peerInfo.encrypt = false;
 
     return esp_now_add_peer(&peerInfo) == ESP_OK;
+}
+
+bool EspConnection::isTextMsgType(uint8_t type)
+{
+    return type == MSG_TYPE_COMMAND || type == MSG_TYPE_CHAT;
 }
 
 String EspConnection::msgTypeToString(uint8_t type) {
@@ -151,23 +158,32 @@ void EspConnection::printMessage(Message message) {
     Serial.println("Data Size: " + String(message.header.dataSize));
     Serial.println("");
 
-    if (message.header.type != MSG_TYPE_FILE && message.header.type != MSG_TYPE_COMMAND) { return; }
 
-    // for MSG_FILE & MSG_COMMAND
-    Serial.println("Filename: " + String(message.body.filename));
-    Serial.println("Filepath: " + String(message.body.filepath));
-    Serial.println("Total Bytes: " + String(message.body.totalBytes));
-    Serial.println("Bytes Sent: " + String(message.body.bytesSent));
-    Serial.println("Done: " + String(message.header.flags & MSG_FLAG_DONE));
-    Serial.print("Data: ");
+    if (message.header.type == MSG_TYPE_FILE) {
+        Serial.println("Filename: " + String(message.body.filename));
+        Serial.println("Filepath: " + String(message.body.filepath));
+        Serial.println("Total Bytes: " + String(message.body.totalBytes));
+        Serial.println("Bytes Sent: " + String(message.body.bytesSent));
+        Serial.println("Done: " + String(message.header.flags & MSG_FLAG_DONE));
+    }
+
+    if (isTextMsgType(message.header.type)) {
+        Serial.print("Text: ");
+    } else {
+        Serial.print("Data: ");
+    }
 
     // Append data to the result if dataSize is greater than 0
     if (message.header.dataSize > 0) {
         for (size_t i = 0; i < message.header.dataSize; ++i) {
-            Serial.print((char)message.body.data[i]); // Assuming data contains valid characters
+            if (isTextMsgType(message.header.type)) {
+                Serial.print((char)message.rawBody[i]);
+            } else {
+                Serial.print((char)message.body.data[i]); // Assuming data contains valid characters
+            }
         }
     } else {
-        Serial.println("No data");
+        Serial.println("<empty>");
     }
 
     Serial.println("");

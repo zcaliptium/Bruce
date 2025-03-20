@@ -32,7 +32,7 @@ void FileSharing::sendFile() {
         if (sendStatus == ABORTED || sendStatus == FAILED) {
             message.header.flags |= MSG_FLAG_DONE;
             message.header.dataSize = 0;
-            esp_now_send(dstAddress, (uint8_t *)&message, sizeof(message));
+            esp_now_send(dstAddress, (uint8_t *)&message, ESP_NOW_MAX_DATA_LEN);
             displayError("Error sending file");
             break;
         }
@@ -42,7 +42,7 @@ void FileSharing::sendFile() {
         message.body.bytesSent = min(message.body.bytesSent + bytesRead, message.body.totalBytes);
         if (message.body.bytesSent == message.body.totalBytes) { message.header.flags |= MSG_FLAG_DONE; }
 
-        response = esp_now_send(dstAddress, (uint8_t *)&message, sizeof(message));
+        response = esp_now_send(dstAddress, (uint8_t *)&message, ESP_NOW_MAX_DATA_LEN);
         if (response != ESP_OK) {
             Serial.printf("Send file response: %s\n", esp_err_to_name(response));
             sendStatus = FAILED;

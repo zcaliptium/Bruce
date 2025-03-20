@@ -58,15 +58,19 @@ public:
         char filename[ESP_FILENAME_SIZE]; // 30
         char filepath[ESP_FILEPATH_SIZE]; // 50
         char data[ESP_DATA_SIZE];         // 152
-
-        // Constructor to initialize defaults
-        MessageBody() : totalBytes(0) {}
     };
 
     // Struct has to be 250 B max (8 bytes Header + 242 for Body)
     struct Message {
         MessageHeader header;
-        MessageBody body;
+
+        union {
+            MessageBody body;
+            char rawBody[sizeof(MessageBody)];
+        };
+
+        char zero; // terminator for text messages
+        Message() : zero('\0') {}
     };
 #pragma pack()
 
@@ -92,9 +96,10 @@ protected:
     bool beginSend();
     bool beginEspnow();
 
+    bool isTextMsgType(uint8_t type);
     String msgTypeToString(uint8_t type);
 
-    Message createMessage(String text);
+    Message createTextMessage(String text);
     Message createFileMessage(File file);
     Message createPingMessage();
     Message createPongMessage();

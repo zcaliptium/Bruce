@@ -28,7 +28,7 @@ void EspSerialCmd::sendCommands() {
             message = createCmdMessage();
 
             if (message.header.dataSize > 0) {
-                esp_err_t response = esp_now_send(dstAddress, (uint8_t *)&message, sizeof(message));
+                esp_err_t response = esp_now_send(dstAddress, (uint8_t *)&message, ESP_NOW_MAX_DATA_LEN);
                 if (response == ESP_OK) sendStatus = SUCCESS;
                 else {
                     Serial.printf("Send command response: %s\n", esp_err_to_name(response));
@@ -46,7 +46,7 @@ void EspSerialCmd::sendCommands() {
         }
 
         if (sendStatus == SUCCESS) {
-            displaySentCommand(message.body.data);
+            displaySentCommand(message.rawBody);
             sendStatus = WAITING;
         }
 
@@ -92,13 +92,14 @@ void EspSerialCmd::receiveCommands() {
             // Filter non-command messages.
             if (recvMessage.header.type != MSG_TYPE_COMMAND) { continue; }
 
-            recvCommand = recvMessage.body.data;
-            Serial.println(recvCommand);
-
-            if (recvMessage.header.flags & MSG_FLAG_DONE) {
-                Serial.println("Recv done");
-                recvStatus = recvMessage.body.bytesSent == recvMessage.body.totalBytes ? SUCCESS : FAILED;
+            // Filter cmd with invalid length
+            if (recvMessage.header.dataSize > sizeof(MessageBody)) {
+                continue;
             }
+
+            recvCommand = recvMessage.rawBody;
+            Serial.println(recvCommand);
+            recvStatus = SUCCESS;
         }
 
         delay(100);
@@ -112,8 +113,8 @@ EspSerialCmd::Message EspSerialCmd::createCmdMessage() {
     tft.fillScreen(bruceConfig.bgColor);
     delay(500);
 
-    String command = keyboard("", ESP_DATA_SIZE, "Serial Command");
-    Message msg = createMessage(command);
+    String command = keyboard("", sizeof(MessageBody), "Serial Command");
+    Message msg = createTextMessage(command);
     msg.header.type = MSG_TYPE_COMMAND;
     printMessage(msg);
 
