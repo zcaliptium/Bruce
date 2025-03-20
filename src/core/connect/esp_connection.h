@@ -24,10 +24,12 @@ public:
 
     enum MessageType {
         MSG_TYPE_NOP = 0, // Does nothing.
-        MSG_TYPE_PING,
-        MSG_TYPE_PONG,
-        MSG_TYPE_FILE,
-        MSG_TYPE_COMMAND,
+        MSG_TYPE_PING,    // Device search request.
+        MSG_TYPE_PONG,    // Device search response.
+        MSG_TYPE_FILE,    // Share file.
+        MSG_TYPE_COMMAND, // Execute remote command.
+        MSG_TYPE_CHAT,    // Chat between Bruce devices.
+        MSG_TYPE_APCREDS, // Share Wifi credentials.
     };
 
     enum MessageFlags {
