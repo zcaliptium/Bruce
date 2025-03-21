@@ -62,15 +62,17 @@ bool EspConnection::beginEspnow() {
     return true;
 }
 
-EspConnection::Message EspConnection::createMessage(String text) {
+EspConnection::Message EspConnection::createTextMessage(String text) {
     Message message;
 
-    message.header.dataSize = text.length();
     message.header.flags |= MSG_FLAG_DONE;
-    message.body.totalBytes = text.length();
-    message.body.bytesSent = text.length();
+    if (text.length() > sizeof(MessageBody)) {
+        message.header.dataSize = sizeof(MessageBody);
+    } else {
+        message.header.dataSize = text.length();
+    }
 
-    strncpy(message.body.data, text.c_str(), ESP_DATA_SIZE);
+    strncpy(message.rawBody, text.c_str(), sizeof(MessageBody));
 
     return message;
 }
@@ -136,6 +138,11 @@ bool EspConnection::addPeer(const uint8_t *mac) {
     return esp_now_add_peer(&peerInfo) == ESP_OK;
 }
 
+bool EspConnection::isTextMsgType(uint8_t type)
+{
+    return type == MSG_TYPE_COMMAND || type == MSG_TYPE_CHAT;
+}
+
 String EspConnection::msgTypeToString(uint8_t type) {
     switch (type) {
         case MSG_TYPE_NOP: return "MSG_NOP";
@@ -161,22 +168,31 @@ void EspConnection::printMessage(Message message) {
     Serial.println("Data Size: " + String(message.header.dataSize));
     Serial.println("");
 
-    if (message.header.type != MSG_TYPE_FILE && message.header.type != MSG_TYPE_COMMAND) { return; }
-
     // for MSG_TYPE_FILE & MSG_TYPE_COMMAND
-    Serial.println("Total Bytes: " + String(message.body.totalBytes));
-    Serial.println("Bytes Sent: " + String(message.body.bytesSent));
-    Serial.println("Filename: " + String(message.body.filename));
-    Serial.println("Filepath: " + String(message.body.filepath));
-    Serial.print("Data: ");
+    if (message.header.type == MSG_TYPE_FILE) {
+        Serial.println("Total Bytes: " + String(message.body.totalBytes));
+        Serial.println("Bytes Sent: " + String(message.body.bytesSent));
+        Serial.println("Filename: " + String(message.body.filename));
+        Serial.println("Filepath: " + String(message.body.filepath));
+    }
+
+    if (isTextMsgType(message.header.type)) {
+        Serial.print("Text: ");
+    } else {
+        Serial.print("Data: ");
+    }
 
     // Append data to the result if dataSize is greater than 0
     if (message.header.dataSize > 0) {
         for (size_t i = 0; i < message.header.dataSize; ++i) {
-            Serial.print((char)message.body.data[i]); // Assuming data contains valid characters
+            if (isTextMsgType(message.header.type)) {
+                Serial.print((char)message.rawBody[i]);
+            } else {
+                Serial.print((char)message.body.data[i]); // Assuming data contains valid characters
+            }
         }
     } else {
-        Serial.println("No data");
+        Serial.println("<empty>");
     }
 
     Serial.println("");
@@ -232,7 +248,8 @@ void EspConnection::onDataRecv(const uint8_t *mac, const uint8_t *incomingData, 
         }
 
         case MSG_TYPE_FILE:
-        case MSG_TYPE_COMMAND: {
+        case MSG_TYPE_COMMAND:
+        case MSG_TYPE_CHAT: {
             recvQueue.push_back(recvMessage);
         }
     }
