@@ -46,7 +46,7 @@ void EspSerialCmd::sendCommands() {
         }
 
         if (sendStatus == SUCCESS) {
-            displaySentCommand(message.body.data);
+            displaySentCommand(message.rawBody);
             sendStatus = WAITING;
         }
 
@@ -92,13 +92,10 @@ void EspSerialCmd::receiveCommands() {
             // Filter non-command messages.
             if (recvMessage.header.type != MSG_TYPE_COMMAND) { continue; }
 
-            recvCommand = recvMessage.body.data;
+            recvCommand = recvMessage.rawBody;
             Serial.println(recvCommand);
-
-            if (recvMessage.header.flags & MSG_FLAG_DONE) {
-                Serial.println("Recv done");
-                recvStatus = recvMessage.body.bytesSent == recvMessage.body.totalBytes ? SUCCESS : FAILED;
-            }
+            Serial.println("Recv done");
+            recvStatus = SUCCESS;
         }
 
         delay(100);
@@ -113,7 +110,7 @@ EspSerialCmd::Message EspSerialCmd::createCmdMessage() {
     delay(500);
 
     String command = keyboard("", ESP_DATA_SIZE, "Serial Command");
-    Message msg = createMessage(command);
+    Message msg = createTextMessage(command);
     msg.header.type = MSG_TYPE_COMMAND;
     printMessage(msg);
 

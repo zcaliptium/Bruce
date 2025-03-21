@@ -100,7 +100,7 @@ protected:
 
     String msgTypeToString(uint8_t type);
 
-    Message createMessage(String text);
+    Message createTextMessage(String text);
     Message createFileMessage(File file);
     Message createPingMessage();
     Message createPongMessage();
@@ -112,6 +112,7 @@ protected:
     void appendPeerToList(const uint8_t *mac);
     void setDstAddress(const uint8_t *address) { memcpy(dstAddress, address, 6); }
 
+    bool isTextMsgType(uint8_t type);
     std::string macToString(const uint8_t *mac);
     void printMessage(Message message);
 
