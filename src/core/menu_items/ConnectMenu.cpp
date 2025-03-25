@@ -1,7 +1,6 @@
 
 #include "ConnectMenu.h"
-#include "core/connect/file_sharing.h"
-#include "core/connect/serial_commands.h"
+#include "core/connect/esp_bruce.h"
 #include "core/display.h"
 #include "core/settings.h"
 #include "core/utils.h"
@@ -9,10 +8,12 @@
 
 void ConnectMenu::optionsMenu() {
     options = {
-        {"Send File", [=]() { FileSharing().sendFile(); }        },
-        {"Recv File", [=]() { FileSharing().receiveFile(); }     },
-        {"Send Cmds", [=]() { EspSerialCmd().sendCommands(); }   },
-        {"Recv Cmds", [=]() { EspSerialCmd().receiveCommands(); }},
+        {"Bruce Tx Cmds", [=]() { EspBruce().run(EspBruce::APP_MODE_CMDSSEND); }},
+        {"Bruce Tx File", [=]() { EspBruce().run(EspBruce::APP_MODE_FILESEND); }},
+        {"Bruce Tx Text", [=]() { EspBruce().run(EspBruce::APP_MODE_TEXTSEND); }},
+        {"Bruce Rx Cmds", [=]() { EspBruce().run(EspBruce::APP_MODE_CMDSRECV); }},
+        {"Bruce Rx File", [=]() { EspBruce().run(EspBruce::APP_MODE_FILERECV); }},
+        {"Bruce Rx Text", [=]() { EspBruce().run(EspBruce::APP_MODE_TEXTRECV); }},
     };
     addOptionToMainMenu();
 

@@ -14,12 +14,18 @@
 class EspBruce : public EspConnection {
 public:
     enum State {
-        STATE_CONNECTING,
-        STATE_STARTED,
-        STATE_WAITING,
-        STATE_FAILED,
-        STATE_DONE,
-        STATE_BREAK,
+        STATE_STOP,         // job is not started
+        STATE_WAIT,         // job is started, but haven't any progress
+        STATE_WORK,         // job in started, and getting progress.
+        STATE_BREAK,        // job aborted by user
+        STATE_OK,           // job is finished
+        STATE_ERR,          // error - generic
+        STATE_ERR_ARG,      // invalid arguments
+        STATE_ERR_APPEND,   // unable to write into file
+        STATE_ERR_PKTLOST,  // missed packet withing sequence
+        STATE_ERR_TIMEOUT,  // don't get any packets for a while
+        STATE_ERR_FILEPICK, // unable to pick file
+        STATE_ERR_PARSE,    // unable to parse data i.e. command
     };
 
     enum MessageType {
@@ -39,18 +45,19 @@ public:
         MSG_FLAG_DONE = 0x01,
     };
 
-    enum MessageFilter {
-        MSG_FILTER_NONE = 0,
-        MSG_FILTER_SERIAL,
-        MSG_FILTER_FILE,
-        MSG_FILTER_TEXT,
+    enum SeqType {
+        SEQ_TYPE_INVALID,
+        SEQ_TYPE_TEXT,
+        SEQ_TYPE_SERIAL,
+        SEQ_TYPE_FILE,
     };
 
 #pragma pack(1)
     // Sequence transfer state.
     struct SeqTransfer {
+        SeqType type;       // data type
+        State state;        // state
         uint8_t mac[6];     // peer address
-        bool isStarted;     // started
         uint16_t handle;    // sequence identifier
         size_t size;        // full size (up to 4 GB)
         size_t dataCounter; // amount of exchanged bytes
@@ -61,12 +68,14 @@ public:
         SeqTransfer() { reset(); }
 
         void reset() {
+            type = SEQ_TYPE_INVALID;
+            state = STATE_STOP; // mark as non started
             memset(mac, 0, sizeof(mac));
-            isStarted = false;
             handle = 0;
             size = 0;
             dataCounter = 0;
             filename = "";
+            command = "";
         }
 
         // Size of useful payload.
@@ -149,20 +158,21 @@ public:
         APP_MODE_CMDSRECV,
         APP_MODE_FILESEND,
         APP_MODE_FILERECV,
+        APP_MODE_TEXTSEND,
+        APP_MODE_TEXTRECV,
     };
 
     EspBruce();
+    void run(AppMode mode);
 
 protected:
-    MessageFilter rxQueueFilter;
     SeqTransfer rxSeq;
     SeqTransfer txSeq;
 
-    State rxState;
-    State txState;
     std::vector<Message> rxQueue;
 
     uint8_t dstAddress[6];
+    String rxCommand;
 
     /////////////////////////////////////////////////////////////////////////////////////
     // Helpers
@@ -170,6 +180,7 @@ protected:
     bool beginSend();
     void displayBanner(AppMode mode);
     File selectFile();
+    String inputText(String msg);
     void setDstAddress(const uint8_t *address) { memcpy(dstAddress, address, 6); }
 
     Message createMessage(String text);
@@ -179,14 +190,24 @@ protected:
 
     void sendPing();
     void sendPong(const uint8_t *mac);
-    void appendPeerToList(const uint8_t *mac);
 
     bool isSeqMsgType(uint8_t type);
-    String msgTypeToString(uint8_t type);
+    String msgTypeToStr(uint8_t type);
+    String stateToStr(State type);
     void printMessage(Message message);
 
     virtual void onDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) override;
     virtual void onDataRecv(const uint8_t *mac, const uint8_t *incomingData, int len) override;
+
+    bool appendToFile(SeqTransfer &seq, Message fileMsg);
+    void createFilename(FS *fs, Message fileMessage);
+    bool sendOneMessage();
+    void sendSequence(SeqTransfer &seq, File file, const char *buf, size_t buflen);
+    void recvSequence(SeqTransfer &seq, File file, char *buf, size_t buflen);
+
+    void sendOneThingy(AppMode mode);
+    void recvOneThingy(AppMode mode);
+    void displayStatus(AppMode mode, SeqTransfer &seq);
 };
 
 #endif
