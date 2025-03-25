@@ -15,10 +15,15 @@ void FileSharing::sendFile() {
         return;
     }
 
-    Message message = createFileMessage(file);
+    Message txMessage = createFileMessage(file);
 
     esp_err_t response;
+
     txState = STARTED;
+    txSeq.reset();
+    txSeq.filename = file.path();
+    txSeq.size = file.size();
+    txSeq.seqId = random(0, 0xFFFF);
 
     drawMainBorderWithTitle("SEND FILE");
     padprintln("");
@@ -30,32 +35,35 @@ void FileSharing::sendFile() {
         if (check(EscPress)) txState = ABORTED;
 
         if (txState == ABORTED || txState == FAILED) {
-            message.header.flags |= MSG_FLAG_DONE;
-            message.header.dataSize = 0;
-            esp_now_send(dstAddress, (uint8_t *)&message, ESP_NOW_MAX_DATA_LEN);
+            txMessage.header.flags |= MSG_FLAG_DONE;
+            txMessage.header.dataSize = 0;
+            esp_now_send(dstAddress, (uint8_t *)&txMessage, ESP_NOW_MAX_DATA_LEN);
             displayError("Error sending file");
             break;
         }
 
-        size_t bytesRead = file.readBytes(message.body.data, ESP_DATA_SIZE);
-        message.header.dataSize = bytesRead;
-        message.body.bytesSent = min(message.body.bytesSent + bytesRead, message.body.totalBytes);
+        size_t bytesRead = file.readBytes(txMessage.body.data, ESP_DATA_SIZE);
+        txSeq.dataCounter = min(txSeq.dataCounter + bytesRead, txSeq.size);
+        txMessage.header.dataSize = bytesRead;
+        txMessage.body.seqId = txSeq.seqId;
+        txMessage.body.totalBytes = txSeq.size;
+        txMessage.body.bytesSent = txSeq.dataCounter;
 
-        if (message.body.bytesSent == message.body.totalBytes) {
-            message.header.flags |= MSG_FLAG_DONE; // mark as completed
+        if (txSeq.dataCounter == txSeq.size) {
+            txMessage.header.flags |= MSG_FLAG_DONE; // mark as completed
         }
 
-        response = esp_now_send(dstAddress, (uint8_t *)&message, ESP_NOW_MAX_DATA_LEN);
+        response = esp_now_send(dstAddress, (uint8_t *)&txMessage, ESP_NOW_MAX_DATA_LEN);
         if (response != ESP_OK) {
             Serial.printf("Send file response: %s\n", esp_err_to_name(response));
             txState = FAILED;
         }
 
-        progressHandler(file.position(), file.size(), "Sending...");
+        progressHandler(file.position(), txSeq.size, "Sending...");
         delay(100);
     }
 
-    if (message.body.bytesSent == message.body.totalBytes) displaySuccess("File sent");
+    if (txSeq.dataCounter == txSeq.size) displaySuccess("File sent");
 
     file.close();
     delay(1000);
@@ -66,7 +74,7 @@ void FileSharing::receiveFile() {
     padprintln("");
     padprintln("Waiting...");
 
-    recvFileName = "";
+    rxSeq.reset();
     recvQueue = {};
     rxState = CONNECTING;
 
@@ -87,21 +95,64 @@ void FileSharing::receiveFile() {
         }
 
         if (!recvQueue.empty()) {
-            Message recvFileMessage = recvQueue.front();
+            Message rxMessage = recvQueue.front();
             recvQueue.erase(recvQueue.begin());
 
             // Filter non-file messages.
-            if (recvFileMessage.header.type != MSG_TYPE_FILE) { continue; }
+            if (rxMessage.header.type != MSG_TYPE_FILE) {
+                continue;
+            }
 
-            progressHandler(recvFileMessage.body.bytesSent, recvFileMessage.body.totalBytes, "Receiving...");
+            // If we have no active tranfer...
+            if (rxSeq.filename == "") {
+                // Safety check - ensure we got first packet in a sequence.
+                if (rxMessage.body.bytesSent != rxMessage.header.dataSize) {
+                    continue; // Skip initiated tranfers.
+                }
 
-            if (!appendToFile(recvFileMessage)) {
+                // First packet on sequence - keep mac, sequence & size
+                memcpy(rxSeq.mac, rxMessage.mac, sizeof(rxSeq.mac));
+                rxSeq.seqId = rxMessage.body.seqId;
+                rxSeq.size = rxMessage.body.totalBytes;
+            }
+
+            // Safety check - ensure all data from same peer.
+            // That's for case if we share thru broadcast.
+            // Without this check another Bruce can break everything. :)
+            if (memcmp(rxMessage.mac, rxSeq.mac, sizeof(rxSeq.mac)) != 0) {
+                continue; // Skip everything from other peers.
+            }
+
+            // Safety check - ensure all data from same sequence.
+            if (rxMessage.body.seqId != rxSeq.seqId) {
+                continue; // Skip everything from other sequences.
+            }
+
+            // Safety check - ensure file size is same.
+            // It can't suddently change during tranfer.
+            if (rxMessage.body.totalBytes != rxSeq.size) {
+                displayError("Err recv - file size mismatch.");
+                break;
+            }
+
+            rxSeq.dataCounter += rxMessage.header.dataSize; // increment counter
+
+            // Safety check - ensure we receive full sequence.
+            if (rxSeq.dataCounter != rxMessage.body.bytesSent) {
+                displayError("Err recv - lost packet.");
+                break;
+            }
+
+            progressHandler(rxSeq.dataCounter, rxSeq.size, "Receiving...");
+
+            if (!appendToFile(rxMessage)) {
                 rxState = FAILED;
                 Serial.println("Failed appending to file");
             }
-            if (recvFileMessage.header.flags & MSG_FLAG_DONE) {
+
+            if (rxMessage.header.flags & MSG_FLAG_DONE) {
                 Serial.println("Recv done");
-                rxState = recvFileMessage.body.bytesSent == recvFileMessage.body.totalBytes ? SUCCESS : FAILED;
+                rxState = rxMessage.body.bytesSent == rxSeq.size ? SUCCESS : FAILED;
             }
         }
 
@@ -114,8 +165,10 @@ void FileSharing::receiveFile() {
         drawMainBorderWithTitle("RECEIVE FILE");
         padprintln("");
         padprintln("File received: ");
-        padprintln(recvFileName);
+        padprintln(rxSeq.filename);
         padprintln("\n");
+        padprintf("Bytes: %d\n", rxSeq.size);
+        padprintln("");
         padprintln("Press any key to leave");
         while (!check(AnyKeyPress)) delay(80);
     }
@@ -142,9 +195,9 @@ bool FileSharing::appendToFile(FileSharing::Message fileMessage) {
     FS *fs;
     if (!getFsStorage(fs)) return false;
 
-    if (recvFileName == "") createFilename(fs, fileMessage);
+    if (rxSeq.filename == "") createFilename(fs, fileMessage);
 
-    File file = (*fs).open(recvFileName, FILE_APPEND);
+    File file = (*fs).open(rxSeq.filename, FILE_APPEND);
     if (!file) return false;
 
     file.write((const uint8_t *)fileMessage.body.data, fileMessage.header.dataSize);
@@ -176,5 +229,5 @@ void FileSharing::createFilename(FS *fs, FileSharing::Message fileMessage) {
         filename += String(i);
     }
 
-    recvFileName = messageFilepath + "/" + filename + ext;
+    rxSeq.filename = messageFilepath + "/" + filename + ext;
 }
