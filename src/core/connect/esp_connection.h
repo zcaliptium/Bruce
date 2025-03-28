@@ -10,7 +10,7 @@
 #define ESP_BRUCE_VER 0
 #define ESP_FILENAME_SIZE 30
 #define ESP_FILEPATH_SIZE 50
-#define ESP_DATA_SIZE 152
+#define ESP_DATA_SIZE 150
 
 class EspConnection {
 public:
@@ -38,6 +38,28 @@ public:
     };
 
 #pragma pack(1)
+    // Sequence transfer state.
+    struct SeqTransfer {
+        uint8_t mac[6];     // peer address
+        uint16_t seqId;     // sequence identifier
+        size_t size;        // full size (up to 4 GB)
+        size_t dataCounter; // amount of exchanged bytes
+        String filename;    // file sharing - local full path
+
+        // Constructor to initialize defaults.
+        SeqTransfer() {
+            reset();
+        }
+
+        void reset() {
+            memset(mac, 0, sizeof(mac));
+            seqId = 0;
+            size = 0;
+            dataCounter = 0;
+            filename = "";
+        }
+    };
+
     // Message header (10 bytes)
     struct MessageHeader {
         char magic[5];       // 5 - protocol identifier
@@ -54,11 +76,12 @@ public:
 
     // Message body (240 bytes)
     struct MessageBody {
+        uint16_t seqId;                   // 2 - sequence identifier
         size_t totalBytes;                // 4 - file size
         size_t bytesSent;                 // 4 - block offset
         char filename[ESP_FILENAME_SIZE]; // 30
         char filepath[ESP_FILEPATH_SIZE]; // 50
-        char data[ESP_DATA_SIZE];         // 152
+        char data[ESP_DATA_SIZE];         // 150
     };
 
     // Max struct size (ESP-NOW v1.0 - 250, ESP-NOW v2.0 - 1490)
@@ -93,8 +116,12 @@ public:
     };
 
 protected:
+    SeqTransfer rxSeq;
+    SeqTransfer txSeq;
+
     State rxState;
     State txState;
+
     uint8_t dstAddress[6];
     uint8_t broadcastAddress[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
     std::vector<Message> recvQueue;
