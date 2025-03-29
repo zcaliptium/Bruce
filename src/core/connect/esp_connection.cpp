@@ -16,7 +16,7 @@ EspConnection::~EspConnection() {
 }
 
 bool EspConnection::beginSend() {
-    sendStatus = CONNECTING;
+    txState = STATE_CONNECTING;
 
     if (!beginEspnow()) return false;
 
@@ -26,7 +26,7 @@ bool EspConnection::beginSend() {
 
     peerOptions.clear();
 
-    if (!setupPeer(dstAddress)) {
+    if (!addPeer(dstAddress)) {
         displayError("Failed to add peer");
         delay(1000);
         return false;
@@ -44,7 +44,7 @@ bool EspConnection::beginEspnow() {
         return false;
     }
 
-    if (!setupPeer(broadcastAddress)) {
+    if (!addPeer(broadcastAddress)) {
         displayError("Failed to add peer");
         delay(1000);
         return false;
@@ -59,12 +59,13 @@ bool EspConnection::beginEspnow() {
 EspConnection::Message EspConnection::createMessage(String text) {
     Message message;
 
-    message.dataSize = text.length();
-    message.totalBytes = text.length();
-    message.bytesSent = text.length();
+    // clamp dataSize to actual capacity
+    message.dataSize = min(text.length(), message.maxData());
+    message.totalBytes = message.dataSize;
+    message.bytesSent = message.dataSize;
     message.done = true;
 
-    strncpy(message.data, text.c_str(), ESP_DATA_SIZE);
+    strncpy(message.getData(), text.c_str(), message.maxData());
 
     return message;
 }
@@ -112,13 +113,13 @@ void EspConnection::sendPing() {
 void EspConnection::sendPong(const uint8_t *mac) {
     Message message = createPongMessage();
 
-    if (!setupPeer(mac)) return;
+    if (!addPeer(mac)) return;
 
     esp_err_t response = esp_now_send(mac, (uint8_t *)&message, sizeof(message));
     if (response != ESP_OK) { Serial.printf("Send pong response: %s\n", esp_err_to_name(response)); }
 }
 
-bool EspConnection::setupPeer(const uint8_t *mac) {
+bool EspConnection::addPeer(const uint8_t *mac) {
     if (esp_now_is_peer_exist(mac)) return true;
 
     esp_now_peer_info_t peerInfo = {};
@@ -158,7 +159,7 @@ void EspConnection::printMessage(Message message) {
     // Append data to the result if dataSize is greater than 0
     if (message.dataSize > 0) {
         for (size_t i = 0; i < message.dataSize; ++i) {
-            Serial.print((char)message.data[i]); // Assuming data contains valid characters
+            Serial.print((char)message.getData()[i]); // Assuming data contains valid characters
         }
     } else {
         Serial.println("No data");
@@ -179,10 +180,10 @@ void EspConnection::appendPeerToList(const uint8_t *mac) {
 
 void EspConnection::onDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
     if (status == ESP_NOW_SEND_SUCCESS) {
-        sendStatus = SUCCESS;
+        txState = STATE_DONE;
         Serial.println("ESPNOW send success");
     } else {
-        sendStatus = FAILED;
+        txState = STATE_FAILED;
         Serial.println("ESPNOW send fail");
     }
 }
@@ -199,5 +200,5 @@ void EspConnection::onDataRecv(const uint8_t *mac, const uint8_t *incomingData, 
     if (recvMessage.ping) return sendPong(mac);
     if (recvMessage.pong) return appendPeerToList(mac);
 
-    recvQueue.push_back(recvMessage);
+    rxQueue.push_back(recvMessage);
 }

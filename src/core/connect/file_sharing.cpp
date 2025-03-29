@@ -4,7 +4,7 @@
 FileSharing::FileSharing() {}
 
 void FileSharing::sendFile() {
-    drawMainBorderWithTitle("SEND FILE");
+    displayBanner(APP_MODE_FILESEND);
 
     if (!beginSend()) return;
 
@@ -18,18 +18,18 @@ void FileSharing::sendFile() {
     Message message = createFileMessage(file);
 
     esp_err_t response;
-    sendStatus = STARTED;
+    txState = STATE_STARTED;
 
-    drawMainBorderWithTitle("SEND FILE");
+    displayBanner(APP_MODE_FILESEND);
     padprintln("");
     padprintln("Sending...");
 
     delay(100);
 
     while (file.available()) {
-        if (check(EscPress)) sendStatus = ABORTED;
+        if (check(EscPress)) txState = STATE_BREAK;
 
-        if (sendStatus == ABORTED || sendStatus == FAILED) {
+        if (txState == STATE_BREAK || txState == STATE_FAILED) {
             message.done = true;
             message.dataSize = 0;
             esp_now_send(dstAddress, (uint8_t *)&message, sizeof(message));
@@ -37,7 +37,7 @@ void FileSharing::sendFile() {
             break;
         }
 
-        size_t bytesRead = file.readBytes(message.data, ESP_DATA_SIZE);
+        size_t bytesRead = file.readBytes(message.getData(), message.maxData());
         message.dataSize = bytesRead;
         message.bytesSent = min(message.bytesSent + bytesRead, message.totalBytes);
         message.done = message.bytesSent == message.totalBytes;
@@ -45,7 +45,7 @@ void FileSharing::sendFile() {
         response = esp_now_send(dstAddress, (uint8_t *)&message, sizeof(message));
         if (response != ESP_OK) {
             Serial.printf("Send file response: %s\n", esp_err_to_name(response));
-            sendStatus = FAILED;
+            txState = STATE_FAILED;
         }
 
         progressHandler(file.position(), file.size(), "Sending...");
@@ -59,43 +59,43 @@ void FileSharing::sendFile() {
 }
 
 void FileSharing::receiveFile() {
-    drawMainBorderWithTitle("RECEIVE FILE");
+    displayBanner(APP_MODE_FILERECV);
     padprintln("");
     padprintln("Waiting...");
 
-    recvFileName = "";
-    recvQueue = {};
-    recvStatus = CONNECTING;
+    rxFileName = "";
+    rxQueue = {};
+    rxState = STATE_CONNECTING;
 
     if (!beginEspnow()) return;
 
     delay(100);
 
     while (1) {
-        if (check(EscPress)) recvStatus = ABORTED;
+        if (check(EscPress)) rxState = STATE_BREAK;
 
-        if (recvStatus == ABORTED || recvStatus == FAILED) {
+        if (rxState == STATE_BREAK || rxState == STATE_FAILED) {
             displayError("Error receiving file");
             break;
         }
-        if (recvStatus == SUCCESS) {
+        if (rxState == STATE_DONE) {
             displaySuccess("File received");
             break;
         }
 
-        if (!recvQueue.empty()) {
-            Message recvFileMessage = recvQueue.front();
-            recvQueue.erase(recvQueue.begin());
+        if (!rxQueue.empty()) {
+            Message recvFileMessage = rxQueue.front();
+            rxQueue.erase(rxQueue.begin());
 
             progressHandler(recvFileMessage.bytesSent, recvFileMessage.totalBytes, "Receiving...");
 
             if (!appendToFile(recvFileMessage)) {
-                recvStatus = FAILED;
+                rxState = STATE_FAILED;
                 Serial.println("Failed appending to file");
             }
             if (recvFileMessage.done) {
                 Serial.println("Recv done");
-                recvStatus = recvFileMessage.bytesSent == recvFileMessage.totalBytes ? SUCCESS : FAILED;
+                rxState = recvFileMessage.bytesSent == recvFileMessage.totalBytes ? STATE_DONE : STATE_FAILED;
             }
         }
 
@@ -104,11 +104,11 @@ void FileSharing::receiveFile() {
 
     delay(1000);
 
-    if (recvStatus == SUCCESS) {
-        drawMainBorderWithTitle("RECEIVE FILE");
+    if (rxState == STATE_DONE) {
+        displayBanner(APP_MODE_FILERECV);
         padprintln("");
         padprintln("File received: ");
-        padprintln(recvFileName);
+        padprintln(rxFileName);
         padprintln("\n");
         padprintln("Press any key to leave");
         while (!check(AnyKeyPress)) delay(80);
@@ -136,12 +136,12 @@ bool FileSharing::appendToFile(FileSharing::Message fileMessage) {
     FS *fs;
     if (!getFsStorage(fs)) return false;
 
-    if (recvFileName == "") createFilename(fs, fileMessage);
+    if (rxFileName == "") createFilename(fs, fileMessage);
 
-    File file = (*fs).open(recvFileName, FILE_APPEND);
+    File file = (*fs).open(rxFileName, FILE_APPEND);
     if (!file) return false;
 
-    file.write((const uint8_t *)fileMessage.data, fileMessage.dataSize);
+    file.write((const uint8_t *)fileMessage.getData(), fileMessage.dataSize);
     file.close();
 
     return true;
@@ -170,5 +170,15 @@ void FileSharing::createFilename(FS *fs, FileSharing::Message fileMessage) {
         filename += String(i);
     }
 
-    recvFileName = messageFilepath + "/" + filename + ext;
+    rxFileName = messageFilepath + "/" + filename + ext;
+}
+
+void FileSharing::displayBanner(AppMode mode) {
+    switch (mode) {
+        case APP_MODE_FILERECV: drawMainBorderWithTitle("RECEIVE FILE"); break;
+        case APP_MODE_FILESEND: drawMainBorderWithTitle("SEND FILE"); break;
+        default: drawMainBorderWithTitle("UNKNOWN MODE"); break;
+    }
+
+    padprintln("");
 }

@@ -5,6 +5,11 @@
 
 class EspSerialCmd : public EspConnection {
 public:
+    enum AppMode {
+        APP_MODE_CMDSSEND,
+        APP_MODE_CMDSRECV,
+    };
+
     /////////////////////////////////////////////////////////////////////////////////////
     // Constructor
     /////////////////////////////////////////////////////////////////////////////////////
@@ -17,21 +22,15 @@ public:
     void receiveCommands();
 
 private:
-    String recvCommand;
+    String rxCommand;
 
     /////////////////////////////////////////////////////////////////////////////////////
     // Helpers
     /////////////////////////////////////////////////////////////////////////////////////
-    void displayRecvBanner();
-    void displaySendBanner();
+    void displayBanner(AppMode mode);
 
-    void displayRecvCommand(bool success);
-    void displayRecvError();
-    void displayRecvFooter();
-
-    void displaySentCommand(const char *command);
-    void displaySentError();
-    void displaySentFooter();
+    void displaySentStatus(const char *command, bool success);
+    void displayRecvStatus(bool received, bool executed);
 
     Message createCmdMessage();
 };
