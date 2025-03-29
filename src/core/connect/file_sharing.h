@@ -5,6 +5,11 @@
 
 class FileSharing : public EspConnection {
 public:
+    enum AppMode {
+        APP_MODE_FILESEND,
+        APP_MODE_FILERECV,
+    };
+
     /////////////////////////////////////////////////////////////////////////////////////
     // Constructor
     /////////////////////////////////////////////////////////////////////////////////////
@@ -17,7 +22,7 @@ public:
     void receiveFile();
 
 private:
-    String recvFileName;
+    String rxFileName;
 
     /////////////////////////////////////////////////////////////////////////////////////
     // Helpers
@@ -25,6 +30,8 @@ private:
     File selectFile();
     bool appendToFile(Message fileMessage);
     void createFilename(FS *fs, Message fileMessage);
+
+    void displayBanner(AppMode mode);
 };
 
 #endif

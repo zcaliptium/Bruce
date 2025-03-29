@@ -5,12 +5,12 @@
 EspSerialCmd::EspSerialCmd() {}
 
 void EspSerialCmd::sendCommands() {
-    displaySendBanner();
+    displayBanner(APP_MODE_CMDSSEND);
     padprintln("Waiting...");
 
     if (!beginSend()) return;
 
-    sendStatus = CONNECTING;
+    txState = STATE_CONNECTING;
     Message message;
 
     delay(100);
@@ -18,36 +18,36 @@ void EspSerialCmd::sendCommands() {
     while (1) {
         if (check(EscPress)) {
             displayInfo("Aborting...");
-            sendStatus = ABORTED;
+            txState = STATE_BREAK;
             break;
         }
 
-        if (check(SelPress)) { sendStatus = CONNECTING; }
+        if (check(SelPress)) { txState = STATE_CONNECTING; }
 
-        if (sendStatus == CONNECTING) {
+        if (txState == STATE_CONNECTING) {
             message = createCmdMessage();
 
             if (message.dataSize > 0) {
                 esp_err_t response = esp_now_send(dstAddress, (uint8_t *)&message, sizeof(message));
-                if (response == ESP_OK) sendStatus = SUCCESS;
+                if (response == ESP_OK) txState = STATE_DONE;
                 else {
                     Serial.printf("Send command response: %s\n", esp_err_to_name(response));
-                    sendStatus = FAILED;
+                    txState = STATE_FAILED;
                 }
             } else {
                 Serial.println("No command to send");
-                sendStatus = FAILED;
+                txState = STATE_FAILED;
             }
         }
 
-        if (sendStatus == FAILED) {
+        if (txState == STATE_FAILED) {
             displaySentError();
-            sendStatus = WAITING;
+            txState = STATE_WAITING;
         }
 
-        if (sendStatus == SUCCESS) {
-            displaySentCommand(message.data);
-            sendStatus = WAITING;
+        if (txState == STATE_DONE) {
+            displaySentCommand(message.getData());
+            txState = STATE_WAITING;
         }
 
         delay(100);
@@ -57,12 +57,12 @@ void EspSerialCmd::sendCommands() {
 }
 
 void EspSerialCmd::receiveCommands() {
-    displayRecvBanner();
+    displayBanner(APP_MODE_CMDSRECV);
     padprintln("Waiting...");
 
-    recvCommand = "";
-    recvQueue.clear();
-    recvStatus = CONNECTING;
+    rxCommand = "";
+    rxQueue.clear();
+    rxState = STATE_CONNECTING;
     Message recvMessage;
 
     if (!beginEspnow()) return;
@@ -72,29 +72,29 @@ void EspSerialCmd::receiveCommands() {
     while (1) {
         if (check(EscPress)) {
             displayInfo("Aborting...");
-            recvStatus = ABORTED;
+            rxState = STATE_BREAK;
             break;
         }
 
-        if (recvStatus == FAILED) {
+        if (rxState == STATE_FAILED) {
             displayRecvError();
-            recvStatus = WAITING;
+            rxState = STATE_WAITING;
         }
-        if (recvStatus == SUCCESS) {
-            displayRecvCommand(serialCli.parse(recvCommand));
-            recvStatus = WAITING;
+        if (rxState == STATE_DONE) {
+            displayRecvCommand(serialCli.parse(rxCommand));
+            rxState = STATE_WAITING;
         }
 
-        if (!recvQueue.empty()) {
-            recvMessage = recvQueue.front();
-            recvQueue.erase(recvQueue.begin());
+        if (!rxQueue.empty()) {
+            recvMessage = rxQueue.front();
+            rxQueue.erase(rxQueue.begin());
 
-            recvCommand = recvMessage.data;
-            Serial.println(recvCommand);
+            rxCommand = recvMessage.getData();
+            Serial.println(rxCommand);
 
             if (recvMessage.done) {
                 Serial.println("Recv done");
-                recvStatus = recvMessage.bytesSent == recvMessage.totalBytes ? SUCCESS : FAILED;
+                rxState = recvMessage.bytesSent == recvMessage.totalBytes ? STATE_DONE : STATE_FAILED;
             }
         }
 
@@ -116,13 +116,13 @@ EspSerialCmd::Message EspSerialCmd::createCmdMessage() {
     return msg;
 }
 
-void EspSerialCmd::displayRecvBanner() {
-    drawMainBorderWithTitle("RECEIVE COMMANDS");
-    padprintln("");
-}
+void EspSerialCmd::displayBanner(AppMode mode) {
+    switch (mode) {
+        case APP_MODE_CMDSRECV: drawMainBorderWithTitle("RECEIVE COMMANDS"); break;
+        case APP_MODE_CMDSSEND: drawMainBorderWithTitle("SEND COMMANDS"); break;
+        default: drawMainBorderWithTitle("UNKNOWN MODE"); break;
+    }
 
-void EspSerialCmd::displaySendBanner() {
-    drawMainBorderWithTitle("SEND COMMANDS");
     padprintln("");
 }
 
@@ -130,9 +130,9 @@ void EspSerialCmd::displayRecvCommand(bool success) {
     String execution = success ? "Execution success" : "Execution failed";
     Serial.println(execution);
 
-    displayRecvBanner();
+    displayBanner(APP_MODE_CMDSRECV);
     padprintln("Command received: ");
-    padprintln(recvCommand);
+    padprintln(rxCommand);
     padprintln("");
     padprintln(execution);
 
@@ -140,7 +140,7 @@ void EspSerialCmd::displayRecvCommand(bool success) {
 }
 
 void EspSerialCmd::displayRecvError() {
-    displayRecvBanner();
+    displayBanner(APP_MODE_CMDSRECV);
     padprintln("Error receiving command");
     displayRecvFooter();
 }
@@ -151,14 +151,14 @@ void EspSerialCmd::displayRecvFooter() {
 }
 
 void EspSerialCmd::displaySentCommand(const char *command) {
-    displaySendBanner();
+    displayBanner(APP_MODE_CMDSSEND);
     padprintln("Command sent: ");
     padprintln(command);
     displaySentFooter();
 }
 
 void EspSerialCmd::displaySentError() {
-    displaySendBanner();
+    displayBanner(APP_MODE_CMDSSEND);
     padprintln("Error sending command");
     displaySentFooter();
 }
