@@ -17,7 +17,7 @@ public:
     void receiveCommands();
 
 private:
-    String recvCommand;
+    String rxCommand;
 
     /////////////////////////////////////////////////////////////////////////////////////
     // Helpers

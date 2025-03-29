@@ -11,13 +11,13 @@
 
 class EspConnection {
 public:
-    enum Status {
-        CONNECTING,
-        STARTED,
-        WAITING,
-        FAILED,
-        SUCCESS,
-        ABORTED,
+    enum State {
+        STATE_CONNECTING,
+        STATE_STARTED,
+        STATE_WAITING,
+        STATE_FAILED,
+        STATE_DONE,
+        STATE_BREAK,
     };
 
     // Struct has to be 250 B max
@@ -37,6 +37,12 @@ public:
         Message()
             : dataSize(0), totalBytes(0), bytesSent(0), isFile(false), done(false), ping(false), pong(false) {
         }
+
+        // Pointer to useful payload. Use getter to redirect on different data fields.
+        char *getData() { return data; }
+
+        // Size of useful payload.
+        size_t maxData() { return ESP_DATA_SIZE; }
     };
 
     EspConnection();
@@ -52,11 +58,11 @@ public:
     };
 
 protected:
-    Status recvStatus;
-    Status sendStatus;
+    State rxState;
+    State txState;
     uint8_t dstAddress[6];
     uint8_t broadcastAddress[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
-    std::vector<Message> recvQueue;
+    std::vector<Message> rxQueue;
 
     bool beginSend();
     bool beginEspnow();
@@ -69,7 +75,7 @@ protected:
     void sendPing();
     void sendPong(const uint8_t *mac);
 
-    bool setupPeer(const uint8_t *mac);
+    bool addPeer(const uint8_t *mac);
     void appendPeerToList(const uint8_t *mac);
     void setDstAddress(const uint8_t *address) { memcpy(dstAddress, address, 6); }
 

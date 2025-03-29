@@ -17,7 +17,7 @@ public:
     void receiveFile();
 
 private:
-    String recvFileName;
+    String rxFileName;
 
     /////////////////////////////////////////////////////////////////////////////////////
     // Helpers
