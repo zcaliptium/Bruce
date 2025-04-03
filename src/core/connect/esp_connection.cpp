@@ -6,7 +6,10 @@
 EspConnection *EspConnection::instance = nullptr;
 std::vector<Option> peerOptions;
 
-EspConnection::EspConnection() { setInstance(this); }
+EspConnection::EspConnection() {
+    setInstance(this);
+    rxQueueFilter = MSG_FILTER_NONE;
+}
 
 EspConnection::~EspConnection() {
     esp_now_unregister_send_cb();
@@ -248,10 +251,15 @@ void EspConnection::onDataRecv(const uint8_t *mac, const uint8_t *incomingData, 
         }
 
         case MSG_TYPE_FILEHEAD:
-        case MSG_TYPE_FILEBODY:
+        case MSG_TYPE_FILEBODY: {
+            if (rxQueueFilter == MSG_FILTER_FILE) { rxQueue.push_back(rxMessage); }
+            return;
+        }
+
         case MSG_TYPE_CMDTINY:
         case MSG_TYPE_CMDLONG: {
-            rxQueue.push_back(rxMessage);
+            if (rxQueueFilter == MSG_FILTER_SERIAL) { rxQueue.push_back(rxMessage); }
+            return;
         }
     }
 }

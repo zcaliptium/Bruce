@@ -2,7 +2,7 @@
 #include "core/display.h"
 #include "core/mykeyboard.h"
 
-EspSerialCmd::EspSerialCmd() {}
+EspSerialCmd::EspSerialCmd() { rxQueueFilter = MSG_FILTER_SERIAL; }
 
 void EspSerialCmd::sendCommands() {
     displayBanner(APP_MODE_CMDSSEND);
