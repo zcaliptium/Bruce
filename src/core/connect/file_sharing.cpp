@@ -1,7 +1,7 @@
 #include "file_sharing.h"
 #include "core/display.h"
 
-FileSharing::FileSharing() {}
+FileSharing::FileSharing() { rxQueueFilter = MSG_FILTER_FILE; }
 
 void FileSharing::sendFile() {
     drawMainBorderWithTitle("SEND FILE");

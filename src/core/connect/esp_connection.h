@@ -40,6 +40,12 @@ public:
         MSG_FLAG_DONE = 0x01,
     };
 
+    enum MessageFilter {
+        MSG_FILTER_NONE = 0,
+        MSG_FILTER_SERIAL,
+        MSG_FILTER_FILE,
+    };
+
 #pragma pack(1)
     // Sequence transfer state.
     struct SeqTransfer {
@@ -148,6 +154,7 @@ public:
     };
 
 protected:
+    MessageFilter rxQueueFilter;
     SeqTransfer rxSeq;
     SeqTransfer txSeq;
 
