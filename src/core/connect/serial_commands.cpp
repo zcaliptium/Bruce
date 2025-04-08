@@ -10,8 +10,8 @@ void EspSerialCmd::sendCommands() {
 
     if (!beginSend()) return;
 
+    txSeq.reset();
     txState = STATE_CONNECTING;
-    Message txMessage;
 
     delay(100);
 
@@ -25,19 +25,7 @@ void EspSerialCmd::sendCommands() {
         if (check(SelPress)) { txState = STATE_CONNECTING; }
 
         if (txState == STATE_CONNECTING) {
-            txMessage = createCmdMessage();
-
-            if (txMessage.head.dataSize > 0) {
-                esp_err_t response = esp_now_send(dstAddress, (uint8_t *)&txMessage, ESP_NOW_MAX_DATA_LEN);
-                if (response == ESP_OK) txState = STATE_DONE;
-                else {
-                    Serial.printf("Send command response: %s\n", esp_err_to_name(response));
-                    txState = STATE_FAILED;
-                }
-            } else {
-                Serial.println("No command to send");
-                txState = STATE_FAILED;
-            }
+            txState = sendOneCommand() ? STATE_DONE : STATE_FAILED; // send one
         }
 
         if (txState == STATE_FAILED) {
@@ -46,7 +34,7 @@ void EspSerialCmd::sendCommands() {
         }
 
         if (txState == STATE_DONE) {
-            displaySentCommand(txMessage.getData());
+            displaySentCommand(txSeq.cmd.c_str());
             txState = STATE_WAITING;
         }
 
@@ -54,6 +42,87 @@ void EspSerialCmd::sendCommands() {
     }
 
     delay(1000);
+}
+
+bool EspSerialCmd::sendOneCommand() {
+    Message txMessage;
+    File file;
+    char buf[ESP_CMDLONG_SIZE];
+    bool isInputCmd = false;
+    bool isExecFile = false;
+
+    txSeq.seqId = random(0, 0xFFFF);
+    txSeq.size = min(txSeq.cmd.length(), size_t(ESP_CMDLONG_SIZE));
+    txSeq.dataCounter = 0;
+
+    options = {
+        {"Input cmd", [&]() { isInputCmd = true; }},
+        {"Exec file", [&]() { isExecFile = true; }},
+    };
+
+    if (txSeq.cmd.length() > 0) {
+        options.push_back({"Repeat cmd", [&]() {}});
+    }
+
+    loopOptions(options);
+
+    if (isInputCmd) {
+        inputCommand();
+    } else if (isExecFile) {
+        file = selectFile();
+        if (!file) {
+            displayError("Error selecting file");
+            delay(1000);
+            return false;
+        }
+
+        if (file.size() > ESP_CMDLONG_SIZE) {
+            displayError("File is too big");
+            delay(1000);
+            return false;
+        }
+
+        size_t bytesRead = file.readBytes(buf, sizeof(buf));
+        txSeq.cmd += buf;
+    }
+
+    if (txSeq.cmd == "") {
+        Serial.println("No command to send");
+        return false;
+    }
+
+    while (txSeq.dataCounter < txSeq.size) {
+        txMessage.head.type = txSeq.size > ESP_RAWDATA_SIZE ? MSG_TYPE_CMDLONG : MSG_TYPE_CMDTINY;
+
+        size_t bytesRead = min(txMessage.maxData(), txSeq.size - txSeq.dataCounter);
+        memcpy(txMessage.getData(), txSeq.cmd.c_str() + txSeq.dataCounter, bytesRead);
+        txSeq.dataCounter = min(txSeq.dataCounter + bytesRead, txSeq.size);
+
+        // fill
+        txMessage.head.dataSize = bytesRead;
+        if (txMessage.head.type == MSG_TYPE_CMDLONG) {
+            txMessage.seq.seqId = txSeq.seqId;
+            txMessage.seq.totalBytes = txSeq.size;
+            txMessage.seq.bytesSent = txSeq.dataCounter;
+        }
+
+        if (txSeq.dataCounter == txSeq.size) {
+            txMessage.head.flags |= MSG_FLAG_DONE; // mark as completed
+        }
+
+        printMessage(txMessage);
+
+        esp_err_t response = esp_now_send(dstAddress, (uint8_t *)&txMessage, ESP_NOW_MAX_DATA_LEN);
+        if (response != ESP_OK) {
+            Serial.printf("Send cmd response: %s\n", esp_err_to_name(response));
+            return false;
+        }
+
+        progressHandler(txSeq.dataCounter, txSeq.size, "Sending...");
+        delay(100);
+    }
+
+    return true;
 }
 
 void EspSerialCmd::receiveCommands() {
@@ -79,10 +148,12 @@ void EspSerialCmd::receiveCommands() {
         if (rxState == STATE_FAILED) {
             displayRecvError();
             rxState = STATE_WAITING;
+            rxSeq.reset();
         }
         if (rxState == STATE_DONE) {
             displayRecvCommand(serialCli.parse(rxCommand));
             rxState = STATE_WAITING;
+            rxSeq.reset();
         }
 
         if (!rxQueue.empty()) {
@@ -107,6 +178,61 @@ void EspSerialCmd::receiveCommands() {
             }
 
             // process CMDLONG
+
+            if (!rxSeq.isStarted) {
+                // Safety check - ensure we got first packet in a sequence.
+                if (rxMessage.seq.bytesSent != rxMessage.head.dataSize) {
+                    continue; // Skip initiated tranfers.
+                }
+
+                // Safety check - ensure file size is same.
+                if (rxMessage.seq.totalBytes > ESP_CMDLONG_SIZE) {
+                    rxState = STATE_FAILED;
+                    displayError("Err recv - cmd too long");
+                    continue;
+                }
+
+                // First packet on sequence - keep mac, sequence & size
+                memcpy(rxSeq.mac, rxMessage.mac, sizeof(rxSeq.mac));
+                rxSeq.seqId = rxMessage.seq.seqId;
+                rxSeq.size = rxMessage.seq.totalBytes;
+                rxSeq.isStarted = true;
+            }
+
+            // Safety check - ensure all data from same peer.
+            if (memcmp(rxMessage.mac, rxSeq.mac, sizeof(rxSeq.mac)) != 0) {
+                continue; // Skip everything from other peers.
+            }
+
+            // Safety check - ensure all data from same sequence.
+            if (rxMessage.seq.seqId != rxSeq.seqId) {
+                continue; // Skip everything from other sequences.
+            }
+
+            // Safety check - ensure file size is same.
+            if (rxMessage.seq.totalBytes != rxSeq.size) {
+                rxState = STATE_FAILED;
+                displayError("Err recv - cmd size mismatch.");
+                continue;
+            }
+
+            rxSeq.dataCounter += rxMessage.head.dataSize; // increment counter
+
+            // Safety check - ensure we receive full sequence.
+            if (rxSeq.dataCounter != rxMessage.seq.bytesSent) {
+                rxState = STATE_FAILED;
+                displayError("Err recv - lost packet.");
+                continue;
+            }
+
+            progressHandler(rxSeq.dataCounter, rxSeq.size, "Receiving...");
+            rxCommand += rxMessage.getData();
+
+            if (rxMessage.head.flags & MSG_FLAG_DONE) {
+                Serial.println(rxCommand);
+                Serial.println("Recv done");
+                rxState = rxMessage.seq.bytesSent == rxSeq.size ? STATE_DONE : STATE_FAILED;
+            }
         }
 
         delay(100);
@@ -115,22 +241,39 @@ void EspSerialCmd::receiveCommands() {
     delay(1000);
 }
 
-EspSerialCmd::Message EspSerialCmd::createCmdMessage() {
+File EspSerialCmd::selectFile() {
+    String filename;
+    FS *fs = &LittleFS;
+    setupSdCard();
+    if (sdcardMounted) {
+        options = {
+            {"SD Card",  [&]() { fs = &SD; }      },
+            {"LittleFS", [&]() { fs = &LittleFS; }},
+        };
+        loopOptions(options);
+    }
+    filename = loopSD(*fs, true);
+
+    File file = fs->open(filename, FILE_READ);
+    return file;
+}
+
+void EspSerialCmd::inputCommand() {
     // debounce
     tft.fillScreen(bruceConfig.bgColor);
     delay(500);
 
-    Message msg;
-    msg.head.type = MSG_TYPE_CMDTINY;
+    txSeq.cmd = keyboard("", ESP_RAWDATA_SIZE, "Serial Command");
 
-    String command = keyboard("", sizeof(FileHeadBlock), "Serial Command");
-    msg.head.flags |= MSG_FLAG_DONE;
-    msg.head.dataSize = min(command.length(), msg.maxData());
-    strncpy(msg.rawBody, command.c_str(), msg.maxData());
-
-    printMessage(msg);
-
-    return msg;
+    if (txSeq.cmd == "doom") {
+        txSeq.cmd =
+            "music_player "
+            "doom:d=4,o=5,b=112:16e4,16e4,16e,16e4,16e4,16d,16e4,16e4,16c,16e4,16e4,16a#4,16e4,16e4,16b4,16c,"
+            "16e4,16e4,16e,16e4,16e4,16d,16e4,16e4,16c,16e4,16e4,a#4,16p,16e4,16e4,16e,16e4,16e4,16d,16e4,"
+            "16e4,16c,16e4,16e4,16a#4,16e4,16e4,16b4,16c,16e4,16e4,16e,16e4,16e4,16d,16e4,16e4,16c,16e4,16e4,"
+            "a#4,16p,16a4,16a4,16a,16a4,16a4,16g,16a4,16a4,16f,16a4,16a4,16d#,16a4,16a4,16e,16f,16a4,16a4,"
+            "16a,16a4,16a4,16g,16a4,16a4,16f,16a4,16a4,d#";
+    }
 }
 
 void EspSerialCmd::displayBanner(AppMode mode) {

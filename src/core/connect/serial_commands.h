@@ -37,7 +37,9 @@ private:
     void displaySentError();
     void displaySentFooter();
 
-    Message createCmdMessage();
+    File selectFile();
+    void inputCommand();
+    bool sendOneCommand();
 };
 
 #endif

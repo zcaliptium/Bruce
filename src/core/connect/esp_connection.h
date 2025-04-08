@@ -15,6 +15,7 @@
 #define ESP_FILEPATH_SIZE 50
 #define ESP_DATA_SIZE 150
 #define ESP_RAWDATA_SIZE (ESP_NOW_MAX_DATA_LEN - sizeof(MessageHeader))
+#define ESP_CMDLONG_SIZE 1024
 
 class EspConnection {
 public:
