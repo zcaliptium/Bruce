@@ -1,15 +1,10 @@
 #ifndef __ESP_SERIAL_CMD_H__
 #define __ESP_SERIAL_CMD_H__
 
-#include "esp_connection.h"
+#include "esp_bruce.h"
 
-class EspSerialCmd : public EspConnection {
+class EspSerialCmd : public EspBruce {
 public:
-    enum AppMode {
-        APP_MODE_CMDSSEND,
-        APP_MODE_CMDSRECV,
-    };
-
     /////////////////////////////////////////////////////////////////////////////////////
     // Constructor
     /////////////////////////////////////////////////////////////////////////////////////

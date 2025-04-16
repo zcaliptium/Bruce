@@ -1,15 +1,10 @@
 #ifndef __ESP_FILE_SHARING_H__
 #define __ESP_FILE_SHARING_H__
 
-#include "esp_connection.h"
+#include "esp_bruce.h"
 
-class FileSharing : public EspConnection {
+class FileSharing : public EspBruce {
 public:
-    enum AppMode {
-        APP_MODE_FILESEND,
-        APP_MODE_FILERECV,
-    };
-
     /////////////////////////////////////////////////////////////////////////////////////
     // Constructor
     /////////////////////////////////////////////////////////////////////////////////////
@@ -27,11 +22,8 @@ private:
     /////////////////////////////////////////////////////////////////////////////////////
     // Helpers
     /////////////////////////////////////////////////////////////////////////////////////
-    File selectFile();
     bool appendToFile(Message fileMessage);
     void createFilename(FS *fs, Message fileMessage);
-
-    void displayBanner(AppMode mode);
 };
 
 #endif
